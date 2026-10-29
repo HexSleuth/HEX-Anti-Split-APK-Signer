@@ -1,0 +1,2627 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dracula">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<title>HEX Anti-Split & APK Signer</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  * { -webkit-tap-highlight-color: transparent; }
+  body { min-height: 100vh; background: hsl(var(--b1)); }
+  .tab-active { font-weight: 600; }
+  .hex-dump {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 11px; line-height: 1.4;
+    background: #0d0d10; color: #9ca3af;
+    border-radius: 8px; padding: 12px;
+    overflow-x: auto; max-height: 420px; overflow-y: auto;
+    white-space: pre;
+  }
+  .hex-offset { color: #6b7280; }
+  .hex-byte { color: #67e8f9; }
+  .hex-byte.hl { color: #f472b6; font-weight: bold; }
+  .hex-ascii { color: #86efac; }
+  .file-drop {
+    border: 2px dashed hsl(var(--bc) / 0.25);
+    transition: all 0.2s; cursor: pointer;
+    border-radius: 12px;
+  }
+  .file-drop:hover, .file-drop.dragover {
+    border-color: hsl(var(--p));
+    background: hsl(var(--p) / 0.05);
+  }
+  .theme-card {
+    cursor: pointer;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    overflow: hidden;
+    transition: all 0.15s;
+    background: hsl(var(--b2));
+  }
+  .theme-card:hover { transform: translateY(-2px); }
+  .theme-card.active { border-color: hsl(var(--p)); box-shadow: 0 0 0 2px hsl(var(--p) / 0.2); }
+  .swatch-strip { display: flex; height: 28px; }
+  .swatch-strip span { flex: 1; }
+  .theme-label { display: block; padding: 6px 8px; font-size: 11px; text-align: center; color: hsl(var(--bc)); }
+  .check { display: none; color: hsl(var(--su)); }
+  .theme-card.active .check { display: inline; }
+  .badge-scheme {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 9999px;
+    font-size: 11px; font-weight: 600;
+  }
+  .stat-card {
+    padding: 10px 12px; border-radius: 8px;
+    background: hsl(var(--b2));
+    border: 1px solid hsl(var(--bc) / 0.08);
+  }
+  .loader {
+    border: 3px solid hsl(var(--bc) / 0.15);
+    border-top-color: hsl(var(--p));
+    border-radius: 50%; width: 26px; height: 26px;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .scrollable-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  input[type=file] { display: none; }
+  .color-input {
+    height: 36px; width: 100%; border-radius: 8px;
+    cursor: pointer; border: 1px solid hsl(var(--bc) / 0.2);
+    background: transparent; padding: 2px;
+  }
+  .modal-overlay { animation: fadeIn 0.15s ease-out; }
+  .modal-content { animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp {
+    from { transform: translateY(24px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @media (min-width: 640px) {
+    @keyframes slideUp {
+      from { transform: scale(0.96); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+  }
+  .scheme-chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 10px; border-radius: 8px;
+    background: hsl(var(--b2));
+    border: 1px solid hsl(var(--bc) / 0.15);
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s;
+  }
+  .scheme-chip.on {
+    background: hsl(var(--p) / 0.15);
+    border-color: hsl(var(--p));
+    color: hsl(var(--p));
+  }
+  .scheme-chip .indicator {
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 2px solid hsl(var(--bc) / 0.3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+  }
+  .scheme-chip.on .indicator {
+    background: hsl(var(--p));
+    border-color: hsl(var(--p));
+    color: hsl(var(--pc));
+  }
+  .history-item {
+    padding: 10px;
+    border-radius: 8px;
+    background: hsl(var(--b2));
+    border: 1px solid hsl(var(--bc) / 0.08);
+  }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ============ HEADER ============ -->
+<header class="sticky top-0 z-50 bg-base-100/95 backdrop-blur border-b border-base-300">
+  <div class="max-w-5xl mx-auto px-3 py-2.5 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <div class="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center">
+        <i class="fa-solid fa-shield-halved text-primary text-lg"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-sm leading-tight">HEX Anti-Split</h1>
+        <p class="text-[10px] text-base-content/60 leading-tight">APK Signer • v1/v2/v3 Inspector</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="btn btn-xs btn-ghost gap-1" id="headerThemeBtn" title="Open Theme Gallery">
+        <i class="fa-solid fa-palette text-primary"></i>
+        <span class="hidden sm:inline text-[11px]">Theme</span>
+      </button>
+      <div class="badge badge-sm badge-success gap-1">
+        <i class="fa-solid fa-moon text-[10px]"></i> Dark
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ MAIN ============ -->
+<main class="max-w-5xl mx-auto px-3 py-4 pb-24">
+
+  <!-- TABS NAV -->
+  <div role="tablist" class="tabs tabs-boxed bg-base-200 mb-4 overflow-x-auto flex-nowrap">
+    <a role="tab" class="tab tab-active" data-tab="analyzer">
+      <i class="fa-solid fa-magnifying-glass-chart mr-1.5"></i>Analyze
+    </a>
+    <a role="tab" class="tab" data-tab="signer">
+      <i class="fa-solid fa-signature mr-1.5"></i>Sign
+    </a>
+    <a role="tab" class="tab" data-tab="keystore">
+      <i class="fa-solid fa-key mr-1.5"></i>Keystore
+    </a>
+    <a role="tab" class="tab" data-tab="merge">
+      <i class="fa-solid fa-object-group mr-1.5"></i>Merge
+    </a>
+    <a role="tab" class="tab" data-tab="history">
+      <i class="fa-solid fa-clock-rotate-left mr-1.5"></i>History
+    </a>
+    <a role="tab" class="tab" data-tab="themes">
+      <i class="fa-solid fa-palette mr-1.5"></i>Themes
+    </a>
+  </div>
+
+  <!-- ============ TAB: ANALYZER ============ -->
+  <section id="tab-analyzer" class="tab-panel">
+    <div class="card bg-base-100 border border-base-300">
+      <div class="card-body p-4 gap-3">
+        <h2 class="card-title text-base">
+          <i class="fa-solid fa-file-shield text-primary"></i>
+          HEX Anti-Split Analyzer
+        </h2>
+        <p class="text-xs text-base-content/60">
+          Inspect APK signing blocks, extract V2/V3 certificate fingerprints, and dump the APK Signing Block in hex.
+        </p>
+
+        <label class="file-drop p-5 flex flex-col items-center justify-center text-center" id="analyzerDrop">
+          <input type="file" id="analyzerFile" accept=".apk,.apks,.xapk,.zip,application/vnd.android.package-archive">
+          <i class="fa-solid fa-cloud-arrow-up text-3xl text-primary mb-2"></i>
+          <span class="text-sm font-medium">Tap to select APK / APKS / XAPK</span>
+          <span class="text-[11px] text-base-content/50 mt-1" id="analyzerFileName">No file selected</span>
+        </label>
+
+        <button class="btn btn-primary btn-block btn-sm" id="btnAnalyze" disabled>
+          <i class="fa-solid fa-microchip"></i> Analyze Signing Block
+        </button>
+
+        <div id="analyzerProgress" class="hidden items-center gap-2 text-xs text-base-content/70">
+          <div class="loader"></div><span id="analyzerProgressText">Analyzing…</span>
+        </div>
+
+        <div id="analyzerResults" class="space-y-3"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TAB: SIGNER ============ -->
+  <section id="tab-signer" class="tab-panel hidden">
+    <div class="card bg-base-100 border border-base-300">
+      <div class="card-body p-4 gap-3">
+        <h2 class="card-title text-base">
+          <i class="fa-solid fa-pen-nib text-primary"></i>
+          APK Signer (v1 / v2 / v3)
+        </h2>
+        <p class="text-xs text-base-content/60">
+          Sign an APK using APK Signature Schemes. Generate an in-browser RSA keypair or upload a PKCS#8 private key + X.509 certificate.
+        </p>
+
+        <label class="file-drop p-4 flex flex-col items-center justify-center text-center" id="signerDrop">
+          <input type="file" id="signerFile" accept=".apk,application/vnd.android.package-archive">
+          <i class="fa-solid fa-file-arrow-up text-2xl text-primary mb-1"></i>
+          <span class="text-sm font-medium">Select APK to sign</span>
+          <span class="text-[11px] text-base-content/50 mt-0.5" id="signerFileName">No file selected</span>
+        </label>
+
+        <div class="divider text-xs my-1">Signing Key</div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button class="btn btn-sm btn-outline" id="btnGenerateKey">
+            <i class="fa-solid fa-key"></i> Generate Key
+          </button>
+          <label class="btn btn-sm btn-outline" for="keyFile">
+            <i class="fa-solid fa-upload"></i> Upload Key
+          </label>
+          <input type="file" id="keyFile" accept=".pem,.der,.p8,.key,.crt,.cer">
+        </div>
+
+        <div id="keyInfo" class="hidden stat-card text-xs space-y-1">
+          <div class="flex items-center gap-2 text-success">
+            <i class="fa-solid fa-circle-check"></i><span class="font-semibold">Key loaded</span>
+          </div>
+          <div class="text-[11px] text-base-content/70 break-all" id="keyInfoDetail"></div>
+        </div>
+
+        <div id="genProgress" class="hidden items-center gap-2 text-xs text-base-content/70">
+          <div class="loader"></div><span>Generating RSA-2048 keypair…</span>
+        </div>
+
+        <div class="divider text-xs my-1">Signature Schemes</div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="scheme-chip on" data-scheme="v1">
+            <div class="indicator"><i class="fa-solid fa-check"></i></div>
+            <div class="flex-1">
+              <div class="text-[11px] font-semibold">V1 (JAR)</div>
+              <div class="text-[9px] opacity-60">Android 1.0+</div>
+            </div>
+          </div>
+          <div class="scheme-chip on" data-scheme="v2">
+            <div class="indicator"><i class="fa-solid fa-check"></i></div>
+            <div class="flex-1">
+              <div class="text-[11px] font-semibold">V2 (Full APK)</div>
+              <div class="text-[9px] opacity-60">Android 7.0+</div>
+            </div>
+          </div>
+          <div class="scheme-chip on" data-scheme="v3">
+            <div class="indicator"><i class="fa-solid fa-check"></i></div>
+            <div class="flex-1">
+              <div class="text-[11px] font-semibold">V3 (Lineage)</div>
+              <div class="text-[9px] opacity-60">Android 9.0+</div>
+            </div>
+          </div>
+          <div class="scheme-chip" data-scheme="v4" style="opacity:0.5">
+            <div class="indicator"></div>
+            <div class="flex-1">
+              <div class="text-[11px] font-semibold">V4 (IDSIG)</div>
+              <div class="text-[9px] opacity-60">Not supported in-browser</div>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn btn-success btn-block btn-sm" id="btnSign" disabled>
+          <i class="fa-solid fa-signature"></i> Sign APK
+        </button>
+
+        <div id="signProgress" class="hidden items-center gap-2 text-xs text-base-content/70">
+          <div class="loader"></div><span id="signProgressText">Signing…</span>
+        </div>
+
+        <div id="signerResults" class="space-y-2"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TAB: KEYSTORE ============ -->
+  <section id="tab-keystore" class="tab-panel hidden">
+    <div class="card bg-base-100 border border-base-300">
+      <div class="card-body p-4 gap-3">
+        <h2 class="card-title text-base">
+          <i class="fa-solid fa-key text-primary"></i>
+          Keystore Generator
+        </h2>
+        <p class="text-xs text-base-content/60">
+          Generate a cryptographic key pair with a self-signed X.509 certificate. Export as PEM, use directly for signing.
+        </p>
+
+        <div class="grid grid-cols-2 gap-2">
+          <label class="form-control">
+            <span class="label-text text-[11px] mb-1">Algorithm</span>
+            <select id="ksAlgo" class="select select-sm select-bordered">
+              <option value="rsa2048">RSA 2048-bit</option>
+              <option value="rsa3072">RSA 3072-bit</option>
+              <option value="rsa4096">RSA 4096-bit</option>
+              <option value="ec256">EC P-256</option>
+              <option value="ec384">EC P-384</option>
+            </select>
+          </label>
+          <label class="form-control">
+            <span class="label-text text-[11px] mb-1">Validity (years)</span>
+            <input type="number" id="ksValidity" class="input input-sm input-bordered" value="25" min="1" max="100">
+          </label>
+        </div>
+
+        <label class="form-control">
+          <span class="label-text text-[11px] mb-1">Common Name (CN)</span>
+          <input type="text" id="ksCN" class="input input-sm input-bordered" value="HEX Anti-Split Signer" placeholder="Certificate Common Name">
+        </label>
+
+        <div class="grid grid-cols-2 gap-2">
+          <label class="form-control">
+            <span class="label-text text-[11px] mb-1">Organization (O)</span>
+            <input type="text" id="ksO" class="input input-sm input-bordered" value="HEX Anti-Split">
+          </label>
+          <label class="form-control">
+            <span class="label-text text-[11px] mb-1">Org Unit (OU)</span>
+            <input type="text" id="ksOU" class="input input-sm input-bordered" value="Signing">
+          </label>
+          <label class="form-control">
+            <span class="label-text text-[11px] mb-1">Locality (L)</span>
+            <input type="text" id="ksL" class="input input-sm input-bordered" value="">
+          </label>
+          <label class="form-control">
+            <span class="label-text text-[11px] mb-1">State (ST)</span>
+            <input type="text" id="ksST" class="input input-sm input-bordered" value="">
+          </label>
+          <label class="form-control col-span-2">
+            <span class="label-text text-[11px] mb-1">Country (C) — 2 letters</span>
+            <input type="text" id="ksC" class="input input-sm input-bordered" value="US" maxlength="2">
+          </label>
+        </div>
+
+        <button class="btn btn-primary btn-block btn-sm" id="btnGenKeystore">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Keystore
+        </button>
+
+        <div id="ksProgress" class="hidden items-center gap-2 text-xs text-base-content/70">
+          <div class="loader"></div><span id="ksProgressText">Generating keypair…</span>
+        </div>
+
+        <div id="ksResults" class="space-y-2"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TAB: MERGE ============ -->
+  <section id="tab-merge" class="tab-panel hidden">
+    <div class="card bg-base-100 border border-base-300">
+      <div class="card-body p-4 gap-3">
+        <h2 class="card-title text-base">
+          <i class="fa-solid fa-object-group text-primary"></i>
+          Anti-Split Merger
+        </h2>
+        <p class="text-xs text-base-content/60">
+          Merge a base APK and split APKs into a single standalone APK. Optionally strip split attributes from the manifest and re-sign.
+        </p>
+
+        <div class="alert alert-warning py-2 text-[11px]">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>Browser-based merge is best-effort: DEX files are renumbered, split resources may be incomplete, and complex apps may not work perfectly.</span>
+        </div>
+
+        <label class="file-drop p-3 flex flex-col items-center justify-center text-center" id="mergeBaseDrop">
+          <input type="file" id="mergeBaseFile" accept=".apk">
+          <i class="fa-solid fa-file text-primary mb-1"></i>
+          <span class="text-xs font-medium">Select Base APK</span>
+          <span class="text-[10px] text-base-content/50" id="mergeBaseName">No file selected</span>
+        </label>
+
+        <label class="file-drop p-3 flex flex-col items-center justify-center text-center" id="mergeSplitsDrop">
+          <input type="file" id="mergeSplitsFiles" accept=".apk" multiple>
+          <i class="fa-solid fa-files text-primary mb-1"></i>
+          <span class="text-xs font-medium">Select Split APKs (multiple)</span>
+          <span class="text-[10px] text-base-content/50" id="mergeSplitsName">No files selected</span>
+        </label>
+
+        <div class="divider text-xs my-1">OR</div>
+
+        <label class="file-drop p-3 flex flex-col items-center justify-center text-center" id="mergeBundleDrop">
+          <input type="file" id="mergeBundleFile" accept=".apks,.xapk,.zip">
+          <i class="fa-solid fa-box-archive text-primary mb-1"></i>
+          <span class="text-xs font-medium">Select .APKS / .XAPK / .ZIP bundle</span>
+          <span class="text-[10px] text-base-content/50" id="mergeBundleName">No file selected</span>
+        </label>
+
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <div class="scheme-chip on" id="mergeAutoSign">
+            <div class="indicator"><i class="fa-solid fa-check"></i></div>
+            <div class="flex-1">
+              <div class="text-[11px] font-semibold">Auto Sign</div>
+              <div class="text-[9px] opacity-60">Requires loaded key</div>
+            </div>
+          </div>
+          <div class="scheme-chip on" id="mergeStripManifest">
+            <div class="indicator"><i class="fa-solid fa-check"></i></div>
+            <div class="flex-1">
+              <div class="text-[11px] font-semibold">Strip Split Attrs</div>
+              <div class="text-[9px] opacity-60">From manifest</div>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-block btn-sm" id="btnMerge" disabled>
+          <i class="fa-solid fa-object-group"></i> Merge APKs
+        </button>
+
+        <div id="mergeProgress" class="hidden items-center gap-2 text-xs text-base-content/70">
+          <div class="loader"></div><span id="mergeProgressText">Merging…</span>
+        </div>
+
+        <div id="mergeResults" class="space-y-2"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TAB: HISTORY ============ -->
+  <section id="tab-history" class="tab-panel hidden">
+    <div class="card bg-base-100 border border-base-300">
+      <div class="card-body p-4 gap-3">
+        <div class="flex items-center justify-between">
+          <h2 class="card-title text-base">
+            <i class="fa-solid fa-clock-rotate-left text-primary"></i>
+            Signing History
+          </h2>
+          <button class="btn btn-xs btn-error btn-outline" id="btnClearHistory">
+            <i class="fa-solid fa-trash"></i> Clear
+          </button>
+        </div>
+        <div id="historyList" class="space-y-2">
+          <div class="text-center text-xs text-base-content/50 py-4">No signing history yet.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ABOUT ============ -->
+  <div class="mt-4 text-center text-[11px] text-base-content/40">
+    <p><i class="fa-solid fa-shield-halved mr-1"></i> Client-side only. Your files never leave your device.</p>
+  </div>
+</main>
+
+<!-- ============ THEME GALLERY MODAL ============ -->
+<div id="themeModal" class="fixed inset-0 z-[100] hidden modal-overlay bg-black/60 backdrop-blur-sm">
+  <div class="absolute inset-0 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="modal-content bg-base-100 w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-base-300 shadow-2xl">
+
+      <div class="flex items-center justify-between px-4 py-3 border-b border-base-300 flex-shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
+            <i class="fa-solid fa-palette text-primary"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-sm leading-tight">Theme Gallery</h3>
+            <p class="text-[10px] text-base-content/60 leading-tight">Tap any theme to preview instantly</p>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-circle btn-ghost" id="themeModalClose" title="Close" aria-label="Close theme gallery">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2" id="themeGallery"></div>
+
+        <div class="divider text-xs my-1">Custom Colors</div>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="form-control">
+            <span class="label-text text-[11px] mb-1">Primary</span>
+            <input type="color" class="color-input" id="cPrimary" value="#7c3aed">
+          </label>
+          <label class="form-control">
+            <span class="label-text text-[11px] mb-1">Secondary</span>
+            <input type="color" class="color-input" id="cSecondary" value="#a78bfa">
+          </label>
+          <label class="form-control">
+            <span class="label-text text-[11px] mb-1">Accent</span>
+            <input type="color" class="color-input" id="cAccent" value="#f472b6">
+          </label>
+          <label class="form-control">
+            <span class="label-text text-[11px] mb-1">Neutral</span>
+            <input type="color" class="color-input" id="cNeutral" value="#1f2937">
+          </label>
+        </div>
+        <button class="btn btn-sm btn-outline btn-block" id="btnApplyColors">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Apply Custom Colors
+        </button>
+      </div>
+
+      <div class="px-4 py-3 border-t border-base-300 flex gap-2 flex-shrink-0">
+        <button class="btn btn-sm btn-outline flex-1" id="themeResetBtn">
+          <i class="fa-solid fa-rotate-left"></i> Reset
+        </button>
+        <button class="btn btn-sm btn-primary flex-1" id="themeApplyCloseBtn">
+          <i class="fa-solid fa-check"></i> Apply & Close
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCRIPT ============ -->
+<script>
+'use strict';
+
+/* ============================================================
+   THEME SYSTEM
+   ============================================================ */
+const THEMES = [
+  'corporate','cupcake','bumblebee','emerald','synthwave','retro','cyberpunk',
+  'valentine','halloween','garden','forest','aqua','lofi','pastel','fantasy',
+  'wireframe','black','luxury','dracula','cmyk','autumn','business','acid',
+  'lemonade','night','coffee','winter','dim','nord','sunset','caramellatte',
+  'abyss','silk'
+];
+
+const THEME_SWATCHES = {
+  corporate:['#4b6bfb','#7b92b2','#67cba0','#181a2a'],
+  cupcake:['#65c3c8','#ef9fbc','#eeaf3a','#291334'],
+  bumblebee:['#e0a82e','#f9d72f','#181830','#181830'],
+  emerald:['#66cc8a','#377cfb','#ea5234','#333c4d'],
+  synthwave:['#e779c1','#58c7f3','#f3cc30','#20134e'],
+  retro:['#ef9995','#a4cbb4','#ebdc99','#7d7259'],
+  cyberpunk:['#ff7598','#75d1f0','#c07eec','#423f00'],
+  valentine:['#e96d7b','#a991f7','#88dbdd','#af4670'],
+  halloween:['#f28c18','#6d3a9c','#51a800','#1b1d1d'],
+  garden:['#5c7f67','#ecf4e7','#fae5e5','#5d5656'],
+  forest:['#1eb854','#1fd65f','#d99330','#110e0e'],
+  aqua:['#09ecf3','#966fb3','#ffe999','#3b8ea5'],
+  lofi:['#808080','#4d4d4d','#1a1a1a','#000000'],
+  pastel:['#d1c1d7','#f6cbd1','#b4e9d6','#70acc7'],
+  fantasy:['#6e0b75','#007ebd','#f8860d','#1f2937'],
+  wireframe:['#b8b8b8','#b8b8b8','#b8b8b8','#ebebeb'],
+  black:['#333333','#333333','#333333','#141414'],
+  luxury:['#ffffff','#152747','#513448','#331800'],
+  dracula:['#ff79c6','#bd93f9','#ffb86c','#414558'],
+  cmyk:['#45aeee','#e8488a','#fff232','#1a1a1a'],
+  autumn:['#8c0327','#d85251','#d59b6a','#826a5c'],
+  business:['#1c4e80','#7c909a','#ea6947','#23282e'],
+  acid:['#ff00ff','#ff7f00','#c4ff00','#150f82'],
+  lemonade:['#519903','#e9e92e','#f7f9ca','#191a3f'],
+  night:['#38bdf8','#818cf8','#f472b6','#1e293b'],
+  coffee:['#db924b','#263e3f','#10576d','#120c12'],
+  winter:['#047aff','#463aa2','#c148ac','#021431'],
+  dim:['#9ca3af','#6b7280','#4b5563','#374151'],
+  nord:['#5e81ac','#81a1c1','#88c0d0','#4c566a'],
+  sunset:['#ff865b','#fd6f9c','#b387fa','#1b1626'],
+  caramellatte:['#d18f50','#8e6844','#b25828','#3b2c23'],
+  abyss:['#0077b6','#00b4d8','#90e0ef','#03045e'],
+  silk:['#ffc2d4','#ffb5a7','#fcd5ce','#e8e8e4']
+};
+
+const DEFAULT_THEME = 'dracula';
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelectorAll('.theme-card').forEach(card => {
+    card.classList.toggle('active', card.dataset.theme === theme);
+  });
+  try { localStorage.setItem('hexas-theme', theme); } catch(_) {}
+  const sw = THEME_SWATCHES[theme] || ['#7c3aed','#a78bfa','#f472b6','#1f2937'];
+  document.getElementById('cPrimary').value   = sw[0];
+  document.getElementById('cSecondary').value = sw[1];
+  document.getElementById('cAccent').value    = sw[2];
+  document.getElementById('cNeutral').value   = sw[3];
+  const root = document.documentElement;
+  ['primary','secondary','accent','neutral'].forEach(p => root.style.removeProperty(`--${p}`));
+}
+
+function buildThemeGallery() {
+  const container = document.getElementById('themeGallery');
+  container.innerHTML = '';
+  const current = document.documentElement.getAttribute('data-theme');
+  THEMES.forEach(theme => {
+    const colors = THEME_SWATCHES[theme] || ['#7c3aed','#a78bfa','#f472b6','#1f2937'];
+    const card = document.createElement('div');
+    card.className = 'theme-card' + (theme === current ? ' active' : '');
+    card.dataset.theme = theme;
+    const strip = document.createElement('div');
+    strip.className = 'swatch-strip';
+    colors.forEach(c => {
+      const s = document.createElement('span');
+      s.style.background = c;
+      strip.appendChild(s);
+    });
+    card.appendChild(strip);
+    const label = document.createElement('span');
+    label.className = 'theme-label';
+    label.textContent = theme;
+    const check = document.createElement('span');
+    check.className = 'check';
+    check.textContent = ' ✓';
+    label.appendChild(check);
+    card.appendChild(label);
+    card.addEventListener('click', () => applyTheme(theme));
+    container.appendChild(card);
+  });
+}
+
+function loadTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem('hexas-theme'); } catch(_) {}
+  applyTheme(saved && THEMES.includes(saved) ? saved : DEFAULT_THEME);
+}
+
+function openThemeModal() {
+  const modal = document.getElementById('themeModal');
+  modal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  document.querySelectorAll('.theme-card').forEach(card => {
+    card.classList.toggle('active', card.dataset.theme === document.documentElement.getAttribute('data-theme'));
+  });
+}
+
+function closeThemeModal() {
+  document.getElementById('themeModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+document.getElementById('themeModalClose').addEventListener('click', closeThemeModal);
+document.getElementById('themeApplyCloseBtn').addEventListener('click', closeThemeModal);
+document.getElementById('headerThemeBtn').addEventListener('click', openThemeModal);
+
+document.getElementById('themeModal').addEventListener('click', (e) => {
+  if (e.target.id === 'themeModal') closeThemeModal();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !document.getElementById('themeModal').classList.contains('hidden')) {
+    closeThemeModal();
+  }
+});
+
+document.getElementById('themeResetBtn').addEventListener('click', () => {
+  applyTheme(DEFAULT_THEME);
+});
+
+document.getElementById('btnApplyColors').addEventListener('click', () => {
+  const root = document.documentElement;
+  root.style.setProperty('--p', hexToHSL(document.getElementById('cPrimary').value));
+  root.style.setProperty('--s', hexToHSL(document.getElementById('cSecondary').value));
+  root.style.setProperty('--a', hexToHSL(document.getElementById('cAccent').value));
+  root.style.setProperty('--n', hexToHSL(document.getElementById('cNeutral').value));
+  document.querySelectorAll('.theme-card').forEach(c => c.classList.remove('active'));
+});
+
+function hexToHSL(hex) {
+  hex = hex.replace('#','');
+  const r = parseInt(hex.substr(0,2),16)/255;
+  const g = parseInt(hex.substr(2,2),16)/255;
+  const b = parseInt(hex.substr(4,2),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h=0, s=0, l = (max+min)/2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max) {
+      case r: h = (g-b)/d + (g<b ? 6 : 0); break;
+      case g: h = (b-r)/d + 2; break;
+      case b: h = (r-g)/d + 4; break;
+    }
+    h /= 6;
+  }
+  return `${(h*360).toFixed(1)} ${(s*100).toFixed(1)}% ${(l*100).toFixed(1)}%`;
+}
+
+/* ============================================================
+   BINARY UTILITIES
+   ============================================================ */
+function readU16LE(b, o) { return b[o] | (b[o+1] << 8); }
+function readU32LE(b, o) { return (b[o] | (b[o+1]<<8) | (b[o+2]<<16) | (b[o+3]<<24)) >>> 0; }
+function readU64LE(b, o) {
+  const lo = readU32LE(b, o);
+  const hi = readU32LE(b, o + 4);
+  return hi * 0x100000000 + lo;
+}
+function u32LE(v) { const a = new Uint8Array(4); const dv = new DataView(a.buffer); dv.setUint32(0, v >>> 0, true); return a; }
+function u64LE(v) {
+  const a = new Uint8Array(8);
+  const dv = new DataView(a.buffer);
+  dv.setUint32(0, v % 0x100000000, true);
+  dv.setUint32(4, Math.floor(v / 0x100000000), true);
+  return a;
+}
+function concatU8(...arrs) {
+  let total = 0;
+  for (const a of arrs) total += a.length;
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const a of arrs) { out.set(a, o); o += a.length; }
+  return out;
+}
+function toHexUpper(bytes, sep = '') { return Array.from(bytes).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(sep); }
+function fromHex(str) {
+  str = str.replace(/[^0-9a-fA-F]/g, '');
+  const out = new Uint8Array(str.length / 2);
+  for (let i = 0; i < str.length; i += 2) out[i/2] = parseInt(str.substr(i, 2), 16);
+  return out;
+}
+function bytesEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function u8ToBase64(bytes) {
+  let binary = '';
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+function base64ToU8(b64) {
+  const binary = atob(b64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+async function sha256(data) {
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return new Uint8Array(hash);
+}
+async function sha1(data) {
+  const hash = await crypto.subtle.digest('SHA-1', data);
+  return new Uint8Array(hash);
+}
+async function sha512(data) {
+  const hash = await crypto.subtle.digest('SHA-512', data);
+  return new Uint8Array(hash);
+}
+
+async function inflateRaw(data) {
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('DecompressionStream not supported in this browser');
+  }
+  const ds = new DecompressionStream('deflate-raw');
+  const stream = new Blob([data]).stream().pipeThrough(ds);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function deflateRaw(data) {
+  if (typeof CompressionStream === 'undefined') {
+    throw new Error('CompressionStream not supported in this browser');
+  }
+  const cs = new CompressionStream('deflate-raw');
+  const stream = new Blob([data]).stream().pipeThrough(cs);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/* CRC32 */
+const CRC32_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c;
+  }
+  return t;
+})();
+function crc32(data) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < data.length; i++) crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ data[i]) & 0xFF];
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+/* ============================================================
+   ZIP PARSER
+   ============================================================ */
+const EOCD_MAGIC = 0x06054b50;
+const CD_MAGIC = 0x02014b50;
+const LFH_MAGIC = 0x04034b50;
+
+function findEOCD(buf) {
+  const maxScan = Math.min(buf.length, 65557 + 22);
+  for (let i = buf.length - 22; i >= buf.length - maxScan && i >= 0; i--) {
+    if (readU32LE(buf, i) === EOCD_MAGIC) return i;
+  }
+  return -1;
+}
+
+function parseZip(buf) {
+  const eocdOff = findEOCD(buf);
+  if (eocdOff < 0) throw new Error('EOCD not found — not a valid ZIP/APK');
+  const cdSize   = readU32LE(buf, eocdOff + 12);
+  const cdOffset = readU32LE(buf, eocdOff + 16);
+  const total    = readU16LE(buf, eocdOff + 10);
+
+  const entries = [];
+  let p = cdOffset;
+  for (let i = 0; i < total; i++) {
+    if (readU32LE(buf, p) !== CD_MAGIC) break;
+    const method     = readU16LE(buf, p + 10);
+    const crc32v     = readU32LE(buf, p + 16);
+    const compSize   = readU32LE(buf, p + 20);
+    const uncompSize = readU32LE(buf, p + 24);
+    const nameLen    = readU16LE(buf, p + 28);
+    const extraLen   = readU16LE(buf, p + 30);
+    const commentLen = readU16LE(buf, p + 32);
+    const lfhOffset  = readU32LE(buf, p + 42);
+    const name       = new TextDecoder('utf-8').decode(buf.subarray(p + 46, p + 46 + nameLen));
+    entries.push({
+      name, method, crc32: crc32v, compSize, uncompSize, lfhOffset,
+      dataOffset: null, cdOffset: p,
+    });
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+
+  for (const e of entries) {
+    const lo = e.lfhOffset;
+    if (readU32LE(buf, lo) !== LFH_MAGIC) continue;
+    const nameLen  = readU16LE(buf, lo + 26);
+    const extraLen = readU16LE(buf, lo + 28);
+    e.dataOffset = lo + 30 + nameLen + extraLen;
+  }
+
+  return { entries, cdOffset, cdSize, eocdOff, total };
+}
+
+function getEntryData(buf, entry) {
+  return buf.subarray(entry.dataOffset, entry.dataOffset + entry.compSize);
+}
+
+async function getEntryUncompressed(buf, entry) {
+  const raw = getEntryData(buf, entry);
+  if (entry.method === 0) return raw;
+  if (entry.method === 8) return await inflateRaw(raw);
+  throw new Error('Unsupported compression method: ' + entry.method);
+}
+
+/* Rebuild ZIP from entry list with STORED compressed data (already compressed) */
+function buildZip(entries) {
+  const parts = [];
+  const cdParts = [];
+  let offset = 0;
+  for (const e of entries) {
+    const nameBytes = new TextEncoder().encode(e.name);
+    const compSize = e.compressedData.length;
+    const uncompSize = e.uncompressedSize;
+    const crc = e.crc;
+    const method = e.method;
+
+    const lfh = new Uint8Array(30 + nameBytes.length);
+    const dv = new DataView(lfh.buffer);
+    dv.setUint32(0, 0x04034b50, true);
+    dv.setUint16(4, 20, true);
+    dv.setUint16(6, 0, true);
+    dv.setUint16(8, method, true);
+    dv.setUint16(10, 0, true);
+    dv.setUint16(12, 0, true);
+    dv.setUint32(14, crc, true);
+    dv.setUint32(18, compSize, true);
+    dv.setUint32(22, uncompSize, true);
+    dv.setUint16(26, nameBytes.length, true);
+    dv.setUint16(28, 0, true);
+    lfh.set(nameBytes, 30);
+
+    const cde = new Uint8Array(46 + nameBytes.length);
+    const dv2 = new DataView(cde.buffer);
+    dv2.setUint32(0, 0x02014b50, true);
+    dv2.setUint16(4, 20, true);
+    dv2.setUint16(6, 20, true);
+    dv2.setUint16(8, 0, true);
+    dv2.setUint16(10, method, true);
+    dv2.setUint16(12, 0, true);
+    dv2.setUint16(14, 0, true);
+    dv2.setUint32(16, crc, true);
+    dv2.setUint32(20, compSize, true);
+    dv2.setUint32(24, uncompSize, true);
+    dv2.setUint16(28, nameBytes.length, true);
+    dv2.setUint16(30, 0, true);
+    dv2.setUint16(32, 0, true);
+    dv2.setUint16(34, 0, true);
+    dv2.setUint16(36, 0, true);
+    dv2.setUint32(38, 0, true);
+    dv2.setUint32(42, offset, true);
+    cde.set(nameBytes, 46);
+
+    parts.push(lfh, e.compressedData);
+    cdParts.push(cde);
+    offset += lfh.length + compSize;
+  }
+
+  const cdStart = offset;
+  let cdSize = 0;
+  for (const c of cdParts) cdSize += c.length;
+
+  const eocd = new Uint8Array(22);
+  const dv3 = new DataView(eocd.buffer);
+  dv3.setUint32(0, 0x06054b50, true);
+  dv3.setUint16(4, 0, true);
+  dv3.setUint16(6, 0, true);
+  dv3.setUint16(8, entries.length, true);
+  dv3.setUint16(10, entries.length, true);
+  dv3.setUint32(12, cdSize, true);
+  dv3.setUint32(16, cdStart, true);
+  dv3.setUint16(20, 0, true);
+
+  return concatU8(...parts, ...cdParts, eocd);
+}
+
+/* ============================================================
+   APK SIGNING BLOCK PARSER
+   ============================================================ */
+const APK_SIG_BLOCK_MAGIC = 'APK Sig Block 42';
+const ID_V2 = 0x7109871a;
+const ID_V3 = 0xf05368c0;
+const ID_V31 = 0x1b93ad61;
+
+function findSigningBlock(buf, cdOffset) {
+  if (cdOffset < 32) return null;
+  const magicOff = cdOffset - 16;
+  const magic = buf.subarray(magicOff, cdOffset);
+  const expected = new TextEncoder().encode(APK_SIG_BLOCK_MAGIC);
+  if (!bytesEqual(magic, expected)) return null;
+  const sizeOff = cdOffset - 24;
+  const blockSize = readU64LE(buf, sizeOff);
+  if (blockSize < 24 || blockSize > cdOffset - 8) return null;
+  const blockStart = cdOffset - 8 - blockSize;
+  const leading = readU64LE(buf, blockStart);
+  if (leading !== blockSize) return null;
+  return {
+    blockStart,
+    blockEnd: cdOffset,
+    blockSize,
+    bytes: buf.subarray(blockStart, cdOffset),
+    pairsOffset: blockStart + 8,
+    pairsEnd: cdOffset - 24,
+  };
+}
+
+function parsePairs(buf, start, end) {
+  const pairs = [];
+  let p = start;
+  while (p + 12 <= end) {
+    const pairLen = readU64LE(buf, p);
+    if (pairLen < 4 || p + 8 + pairLen > end) break;
+    const id = readU32LE(buf, p + 8);
+    const value = buf.subarray(p + 12, p + 8 + pairLen);
+    pairs.push({ id, value, offset: p, length: 8 + pairLen });
+    p += 8 + pairLen;
+  }
+  return pairs;
+}
+
+function lpRead(buf, offset) {
+  const len = readU32LE(buf, offset);
+  return { data: buf.subarray(offset + 4, offset + 4 + len), next: offset + 4 + len, length: len };
+}
+
+function parseV2V3Block(value) {
+  const outer = lpRead(value, 0);
+  const signersBytes = outer.data;
+  const signers = [];
+  let p = 0;
+  const count = readU32LE(signersBytes, p); p += 4;
+  for (let i = 0; i < count; i++) {
+    const signerLP = lpRead(signersBytes, p); p = signerLP.next;
+    try { signers.push(parseSigner(signerLP.data)); }
+    catch(e) { signers.push({ error: e.message }); }
+  }
+  return { signers, count };
+}
+
+function parseSigner(signerBytes) {
+  let p = 0;
+  const signedDataLP = lpRead(signerBytes, p); p = signedDataLP.next;
+  const signaturesLP = lpRead(signerBytes, p); p = signaturesLP.next;
+  const publicKeyLP = lpRead(signerBytes, p); p = publicKeyLP.next;
+  const signedData = parseSignedData(signedDataLP.data);
+  const signatures = parseSignatures(signaturesLP.data);
+  return { signedData, signatures, publicKey: publicKeyLP.data, signedDataBytes: signedDataLP.data };
+}
+
+function parseSignedData(data) {
+  let p = 0;
+  const digestsLP = lpRead(data, p); p = digestsLP.next;
+  const certsLP = lpRead(data, p); p = certsLP.next;
+  if (p < data.length) p = lpRead(data, p).next;
+  const digests = [];
+  {
+    const b = digestsLP.data;
+    let q = 0;
+    const cnt = readU32LE(b, q); q += 4;
+    for (let i = 0; i < cnt; i++) {
+      const recLP = lpRead(b, q); q = recLP.next;
+      const rec = recLP.data;
+      const nameLP = lpRead(rec, 0);
+      const digLP = lpRead(rec, nameLP.next);
+      digests.push({ name: new TextDecoder().decode(nameLP.data), digest: digLP.data });
+    }
+  }
+  const certificates = [];
+  {
+    const b = certsLP.data;
+    let q = 0;
+    const cnt = readU32LE(b, q); q += 4;
+    for (let i = 0; i < cnt; i++) {
+      const certLP = lpRead(b, q); q = certLP.next;
+      certificates.push(certLP.data);
+    }
+  }
+  return { digests, certificates };
+}
+
+function parseSignatures(data) {
+  const sigs = [];
+  let p = 0;
+  const cnt = readU32LE(data, p); p += 4;
+  for (let i = 0; i < cnt; i++) {
+    const recLP = lpRead(data, p); p = recLP.next;
+    const rec = recLP.data;
+    const algId = readU32LE(rec, 0);
+    const sigLP = lpRead(rec, 4);
+    sigs.push({ algId, signature: sigLP.data });
+  }
+  return sigs;
+}
+
+/* ============================================================
+   X.509 CERTIFICATE PARSER
+   ============================================================ */
+function derReadTLV(buf, offset) {
+  if (offset >= buf.length) return null;
+  const tag = buf[offset];
+  let p = offset + 1;
+  let len = buf[p++];
+  if (len & 0x80) {
+    const n = len & 0x7f;
+    len = 0;
+    for (let i = 0; i < n; i++) len = (len << 8) | buf[p++];
+  }
+  return { tag, length: len, valueStart: p, valueEnd: p + len, end: p + len };
+}
+
+function derReadChildren(buf, start, end) {
+  const children = [];
+  let p = start;
+  while (p < end) {
+    const t = derReadTLV(buf, p);
+    if (!t) break;
+    children.push(t);
+    p = t.end;
+  }
+  return children;
+}
+
+const OID_MAP = {
+  '2.5.4.3': 'CN', '2.5.4.6': 'C', '2.5.4.7': 'L', '2.5.4.8': 'ST', '2.5.4.10': 'O', '2.5.4.11': 'OU',
+  '1.2.840.113549.1.1.1': 'RSA', '1.2.840.113549.1.1.11': 'SHA-256 with RSA',
+  '1.2.840.113549.1.1.5': 'SHA-1 with RSA', '1.2.840.113549.1.1.13': 'SHA-512 with RSA',
+  '1.2.840.10045.4.3.2': 'SHA-256 with ECDSA', '1.2.840.10045.4.3.3': 'SHA-384 with ECDSA',
+  '1.2.840.10045.2.1': 'EC', '1.2.840.10040.4.1': 'DSA'
+};
+
+function parseOID(bytes) {
+  if (!bytes.length) return '';
+  const first = bytes[0];
+  const parts = [Math.floor(first / 40), first % 40];
+  let v = 0;
+  for (let i = 1; i < bytes.length; i++) {
+    v = (v << 7) | (bytes[i] & 0x7f);
+    if (!(bytes[i] & 0x80)) { parts.push(v); v = 0; }
+  }
+  return parts.join('.');
+}
+
+function decodeDERString(buf, tlv) {
+  const bytes = buf.subarray(tlv.valueStart, tlv.valueEnd);
+  if (tlv.tag === 0x0c) return new TextDecoder('utf-8').decode(bytes);
+  if (tlv.tag === 0x13 || tlv.tag === 0x16) return new TextDecoder('ascii').decode(bytes);
+  if (tlv.tag === 0x14) return new TextDecoder('utf-16be').decode(bytes);
+  if (tlv.tag === 0x1e) {
+    let s = '';
+    for (let i = 0; i + 1 < bytes.length; i += 2) s += String.fromCharCode((bytes[i]<<8) | bytes[i+1]);
+    return s;
+  }
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+function parseX509Name(buf, start, end) {
+  const seq = derReadChildren(buf, start, end);
+  const parts = [];
+  for (const rdn of seq) {
+    const set = derReadChildren(buf, rdn.valueStart, rdn.valueEnd);
+    for (const atv of set) {
+      const atvChild = derReadChildren(buf, atv.valueStart, atv.valueEnd);
+      if (atvChild.length >= 2) {
+        const oidT = atvChild[0];
+        const valT = atvChild[1];
+        const oid = parseOID(buf.subarray(oidT.valueStart, oidT.valueEnd));
+        const name = OID_MAP[oid] || oid;
+        const val = decodeDERString(buf, valT);
+        parts.push(`${name}=${val}`);
+      }
+    }
+  }
+  return parts.join(', ');
+}
+
+function parseTimeStr(buf, tlv) {
+  const s = new TextDecoder('ascii').decode(buf.subarray(tlv.valueStart, tlv.valueEnd));
+  if (tlv.tag === 0x17) {
+    const y = parseInt(s.substr(0,2));
+    const year = y >= 50 ? 1900 + y : 2000 + y;
+    return `${year}-${s.substr(2,2)}-${s.substr(4,2)} ${s.substr(6,2)}:${s.substr(8,2)}:${s.substr(10,2)} UTC`;
+  }
+  return `${s.substr(0,4)}-${s.substr(4,2)}-${s.substr(6,2)} ${s.substr(8,2)}:${s.substr(10,2)}:${s.substr(12,2)} UTC`;
+}
+
+function parseCertificate(derBytes) {
+  const info = {
+    derLength: derBytes.length,
+    subject: 'Unknown', issuer: 'Unknown',
+    serialNumber: '', notBefore: '', notAfter: '',
+    publicKeyAlg: '', signatureAlg: '',
+  };
+  try {
+    const outer = derReadTLV(derBytes, 0);
+    if (!outer || outer.tag !== 0x30) throw new Error('Not a SEQUENCE');
+    const top = derReadChildren(derBytes, outer.valueStart, outer.valueEnd);
+    if (top.length < 3) throw new Error('Bad certificate structure');
+    const tbs = top[0];
+    const sigAlgT = top[1];
+    const sigAlgChild = derReadChildren(derBytes, sigAlgT.valueStart, sigAlgT.valueEnd);
+    if (sigAlgChild.length >= 1) {
+      const oid = parseOID(derBytes.subarray(sigAlgChild[0].valueStart, sigAlgChild[0].valueEnd));
+      info.signatureAlg = OID_MAP[oid] || oid;
+    }
+    const tbsChild = derReadChildren(derBytes, tbs.valueStart, tbs.valueEnd);
+    let idx = 0;
+    if (tbsChild[idx] && tbsChild[idx].tag === 0xa0) idx++;
+    const serialT = tbsChild[idx++];
+    info.serialNumber = toHexUpper(derBytes.subarray(serialT.valueStart, serialT.valueEnd));
+    idx++;
+    const issuerT = tbsChild[idx++];
+    info.issuer = parseX509Name(derBytes, issuerT.valueStart, issuerT.valueEnd);
+    const validityT = tbsChild[idx++];
+    const validity = derReadChildren(derBytes, validityT.valueStart, validityT.valueEnd);
+    if (validity.length >= 2) {
+      info.notBefore = parseTimeStr(derBytes, validity[0]);
+      info.notAfter  = parseTimeStr(derBytes, validity[1]);
+    }
+    const subjectT = tbsChild[idx++];
+    info.subject = parseX509Name(derBytes, subjectT.valueStart, subjectT.valueEnd);
+    const spkiT = tbsChild[idx++];
+    if (spkiT) {
+      const spkiChild = derReadChildren(derBytes, spkiT.valueStart, spkiT.valueEnd);
+      if (spkiChild.length >= 1) {
+        const algChildren = derReadChildren(derBytes, spkiChild[0].valueStart, spkiChild[0].valueEnd);
+        if (algChildren.length >= 1) {
+          const oid = parseOID(derBytes.subarray(algChildren[0].valueStart, algChildren[0].valueEnd));
+          info.publicKeyAlg = OID_MAP[oid] || oid;
+        }
+      }
+    }
+  } catch(e) {
+    info.error = e.message;
+  }
+  return info;
+}
+
+async function computeFingerprints(derBytes) {
+  const [s256, s1] = await Promise.all([
+    crypto.subtle.digest('SHA-256', derBytes),
+    crypto.subtle.digest('SHA-1', derBytes),
+  ]);
+  return {
+    sha256: toHexUpper(new Uint8Array(s256), ':'),
+    sha1: toHexUpper(new Uint8Array(s1), ':'),
+  };
+}
+
+function extractIssuerAndSerial(certDer) {
+  const outer = derReadTLV(certDer, 0);
+  const top = derReadChildren(certDer, outer.valueStart, outer.valueEnd);
+  const tbs = top[0];
+  const tbsChild = derReadChildren(certDer, tbs.valueStart, tbs.valueEnd);
+  let idx = 0;
+  if (tbsChild[idx] && tbsChild[idx].tag === 0xa0) idx++;
+  const serialT = tbsChild[idx++];
+  idx++; // sigAlg
+  const issuerT = tbsChild[idx++];
+  const issuerDER = certDer.subarray(issuerT.tag === 0x30 ? issuerT.valueStart - 2 : issuerT.valueStart - 2, issuerT.end);
+  // Properly extract full DER of issuer Name
+  const issuerStart = (() => {
+    let p = issuerT.valueStart - 1 - (issuerT.length < 0x80 ? 1 : 2);
+    return Math.max(0, p);
+  })();
+  const issuerFull = certDer.subarray(issuerStart, issuerT.end);
+  const serialFull = certDer.subarray(serialT.valueStart - 2, serialT.end);
+  return { issuerDER: issuerFull, serialDER: serialFull };
+}
+
+function extractSpkiFromCert(certDer) {
+  const outer = derReadTLV(certDer, 0);
+  const top = derReadChildren(certDer, outer.valueStart, outer.valueEnd);
+  const tbs = top[0];
+  const tbsChild = derReadChildren(certDer, tbs.valueStart, tbs.valueEnd);
+  let idx = 0;
+  if (tbsChild[idx] && tbsChild[idx].tag === 0xa0) idx++;
+  idx++; idx++; idx++; idx++; idx++;
+  const spkiT = tbsChild[idx];
+  return certDer.subarray(spkiT.valueStart, spkiT.valueEnd);
+}
+
+/* ============================================================
+   HEX VIEWER
+   ============================================================ */
+function renderHexDump(bytes, highlightRanges = [], maxBytes = 4096) {
+  const limit = Math.min(bytes.length, maxBytes);
+  const lines = [];
+  for (let row = 0; row < limit; row += 16) {
+    const rowBytes = bytes.subarray(row, Math.min(row + 16, limit));
+    const offset = row.toString(16).padStart(8, '0');
+    let hexPart = '';
+    let asciiPart = '';
+    for (let i = 0; i < 16; i++) {
+      if (i < rowBytes.length) {
+        const b = rowBytes[i];
+        const byteOff = row + i;
+        const hl = highlightRanges.some(r => byteOff >= r[0] && byteOff < r[1]);
+        const hexByte = b.toString(16).padStart(2, '0');
+        hexPart += hl ? `<span class="hex-byte hl">${hexByte}</span>` : `<span class="hex-byte">${hexByte}</span>`;
+        hexPart += ' ';
+        asciiPart += (b >= 32 && b < 127) ? String.fromCharCode(b) : '.';
+      } else {
+        hexPart += '   ';
+      }
+      if (i === 7) hexPart += ' ';
+    }
+    lines.push(
+      `<span class="hex-offset">${offset}</span>  ${hexPart} <span class="hex-ascii">${asciiPart.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</span>`
+    );
+  }
+  if (bytes.length > maxBytes) {
+    lines.push(`<span class="hex-offset">… ${bytes.length - maxBytes} more bytes not shown …</span>`);
+  }
+  return lines.join('\n');
+}
+
+/* ============================================================
+   DER ENCODER
+   ============================================================ */
+function derLen(n) {
+  if (n < 0x80) return new Uint8Array([n]);
+  if (n < 0x100) return new Uint8Array([0x81, n]);
+  if (n < 0x10000) return new Uint8Array([0x82, (n>>8)&0xff, n&0xff]);
+  if (n < 0x1000000) return new Uint8Array([0x83, (n>>16)&0xff, (n>>8)&0xff, n&0xff]);
+  return new Uint8Array([0x84, (n>>>24)&0xff, (n>>16)&0xff, (n>>8)&0xff, n&0xff]);
+}
+function derWrap(tag, content) {
+  return concatU8(new Uint8Array([tag]), derLen(content.length), content);
+}
+function derSeq(children) { return derWrap(0x30, concatU8(...children)); }
+function derSetOf(children) { return derWrap(0x31, concatU8(...children)); }
+function derInt(bytes) {
+  let start = 0;
+  while (start < bytes.length - 1 && bytes[start] === 0 && !(bytes[start+1] & 0x80)) start++;
+  bytes = bytes.slice(start);
+  if (bytes.length > 0 && (bytes[0] & 0x80)) bytes = concatU8(new Uint8Array([0]), bytes);
+  if (bytes.length === 0) bytes = new Uint8Array([0]);
+  return derWrap(0x02, bytes);
+}
+function derIntFromNumber(n) {
+  if (n === 0) return new Uint8Array([0x02, 0x01, 0x00]);
+  const bytes = [];
+  while (n > 0) { bytes.unshift(n & 0xff); n = Math.floor(n / 256); }
+  return derInt(new Uint8Array(bytes));
+}
+function derOID(oidStr) {
+  const parts = oidStr.split('.').map(Number);
+  const out = [40 * parts[0] + parts[1]];
+  for (let i = 2; i < parts.length; i++) {
+    let v = parts[i];
+    const enc = [];
+    do {
+      enc.unshift((v & 0x7f) | (enc.length ? 0x80 : 0));
+      v = Math.floor(v / 128);
+    } while (v > 0);
+    out.push(...enc);
+  }
+  return derWrap(0x06, new Uint8Array(out));
+}
+function derNull() { return new Uint8Array([0x05, 0x00]); }
+function derOctetString(bytes) { return derWrap(0x04, bytes); }
+function derBitString(bytes) { return derWrap(0x03, concatU8(new Uint8Array([0]), bytes)); }
+function derUTF8(s) { return derWrap(0x0c, new TextEncoder().encode(s)); }
+function derPrintable(s) { return derWrap(0x13, new TextEncoder().encode(s)); }
+function derUTCTime(date) {
+  const p = n => String(n).padStart(2, '0');
+  let y = date.getUTCFullYear();
+  if (y >= 1950 && y < 2050) {
+    const s = p(y % 100) + p(date.getUTCMonth()+1) + p(date.getUTCDate()) +
+        p(date.getUTCHours()) + p(date.getUTCMinutes()) + p(date.getUTCSeconds()) + 'Z';
+    return derWrap(0x17, new TextEncoder().encode(s));
+  }
+  const s = y + p(date.getUTCMonth()+1) + p(date.getUTCDate()) +
+      p(date.getUTCHours()) + p(date.getUTCMinutes()) + p(date.getUTCSeconds()) + 'Z';
+  return derWrap(0x18, new TextEncoder().encode(s));
+}
+function derExplicit(tagNum, content) { return derWrap(0xa0 | tagNum, content); }
+
+/* ============================================================
+   KEY GENERATION
+   ============================================================ */
+let currentKeyPair = null;
+let currentCertDer = null;
+let currentSpkiDer = null;
+let currentKeyInfo = null;
+
+async function generateSelfSignedCert(opts = {}) {
+  const algo = opts.algorithm || 'rsa2048';
+  const validityYears = opts.validityYears || 25;
+  const dn = opts.dn || { CN: 'HEX Anti-Split Signer', O: 'HEX Anti-Split', OU: 'Signing', L: '', ST: '', C: 'US' };
+
+  let keyGenParams;
+  let sigOid;
+  let sigName;
+  if (algo === 'ec256' || algo === 'ec384') {
+    const curve = algo === 'ec256' ? 'P-256' : 'P-384';
+    keyGenParams = { name: 'ECDSA', namedCurve: curve };
+    sigOid = algo === 'ec256' ? '1.2.840.10045.4.3.2' : '1.2.840.10045.4.3.3';
+    sigName = algo === 'ec256' ? 'SHA-256 with ECDSA' : 'SHA-384 with ECDSA';
+  } else {
+    const bits = algo === 'rsa4096' ? 4096 : algo === 'rsa3072' ? 3072 : 2048;
+    keyGenParams = {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: bits,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    };
+    sigOid = '1.2.840.113549.1.1.11';
+    sigName = 'SHA-256 with RSA';
+  }
+
+  const keyPair = await crypto.subtle.generateKey(keyGenParams, true, ['sign', 'verify']);
+
+  const spki = new Uint8Array(await crypto.subtle.exportKey('spki', keyPair.publicKey));
+  const sigAlg = derSeq([derOID(sigOid), derNull()]);
+
+  const rdns = [];
+  if (dn.CN) rdns.push(derSetOf([derSeq([derOID('2.5.4.3'), derUTF8(dn.CN)])]));
+  if (dn.OU) rdns.push(derSetOf([derSeq([derOID('2.5.4.11'), derUTF8(dn.OU)])]));
+  if (dn.O)  rdns.push(derSetOf([derSeq([derOID('2.5.4.10'), derUTF8(dn.O)])]));
+  if (dn.L)  rdns.push(derSetOf([derSeq([derOID('2.5.4.7'), derUTF8(dn.L)])]));
+  if (dn.ST) rdns.push(derSetOf([derSeq([derOID('2.5.4.8'), derUTF8(dn.ST)])]));
+  if (dn.C)  rdns.push(derSetOf([derSeq([derOID('2.5.4.6'), derPrintable(dn.C)])]));
+  const name = derSeq(rdns);
+
+  const now = new Date();
+  const start = new Date(now.getTime() - 86400000);
+  const end = new Date(now.getTime() + validityYears * 365 * 86400000);
+  const validity = derSeq([derUTCTime(start), derUTCTime(end)]);
+
+  const serialBytes = crypto.getRandomValues(new Uint8Array(16));
+  const serial = derInt(serialBytes);
+
+  const tbs = derSeq([
+    derExplicit(0, derIntFromNumber(2)),
+    serial,
+    sigAlg,
+    name,
+    validity,
+    name,
+    spki,
+  ]);
+
+  const sigParams = algo === 'ec256' || algo === 'ec384'
+    ? { name: 'ECDSA', hash: algo === 'ec256' ? 'SHA-256' : 'SHA-384' }
+    : { name: 'RSASSA-PKCS1-v1_5' };
+
+  const signature = new Uint8Array(await crypto.subtle.sign(sigParams, keyPair.privateKey, tbs));
+  const cert = derSeq([tbs, sigAlg, derBitString(signature)]);
+  return { keyPair, cert, spki, sigName, algo };
+}
+
+async function setActiveKey(keyPair, certDer, spkiDer, source) {
+  currentKeyPair = keyPair;
+  currentCertDer = certDer;
+  currentSpkiDer = spkiDer;
+  const certInfo = parseCertificate(certDer);
+  const fps = await computeFingerprints(certDer);
+  currentKeyInfo = { ...certInfo, ...fps, source };
+  renderKeyInfo();
+}
+
+function renderKeyInfo() {
+  if (!currentKeyInfo) {
+    document.getElementById('keyInfo').classList.add('hidden');
+    return;
+  }
+  document.getElementById('keyInfo').classList.remove('hidden');
+  const k = currentKeyInfo;
+  document.getElementById('keyInfoDetail').innerHTML = `
+    <div><span class="font-semibold">Subject:</span> ${escapeHtml(k.subject)}</div>
+    <div><span class="font-semibold">Alg:</span> ${escapeHtml(k.publicKeyAlg || 'RSA')} / ${escapeHtml(k.signatureAlg || 'SHA-256 with RSA')}</div>
+    <div><span class="font-semibold">Valid:</span> ${escapeHtml(k.notBefore)} → ${escapeHtml(k.notAfter)}</div>
+    <div class="mt-1"><span class="font-semibold">SHA-256:</span><br><code class="text-[10px] break-all">${escapeHtml(k.sha256 || '')}</code></div>
+    <div class="mt-1 text-[10px] text-base-content/50">Source: ${escapeHtml(k.source || 'generated')}</div>
+  `;
+  updateSignButton();
+}
+
+async function loadKeyFromFile(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const text = new TextDecoder().decode(buf);
+  let keyDer = null, certDer = null;
+
+  if (text.includes('-----BEGIN')) {
+    const regex = /-----BEGIN ([^-]+)-----([\s\S]*?)-----END \1-----/g;
+    let m;
+    while ((m = regex.exec(text)) !== null) {
+      const der = fromHex(m[2].replace(/\s+/g, ''));
+      if (m[1].includes('PRIVATE KEY')) keyDer = der;
+      else if (m[1].includes('CERTIFICATE')) certDer = der;
+    }
+  } else {
+    certDer = buf;
+    keyDer = buf;
+  }
+
+  if (!keyDer) { alert('No private key found in file'); return; }
+  if (!certDer) { alert('No certificate found in file'); return; }
+
+  try {
+    let privateKey;
+    const candidates = [
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-384' },
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-512' },
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      { name: 'ECDSA', namedCurve: 'P-384' },
+    ];
+    let lastErr = null;
+    for (const params of candidates) {
+      try {
+        privateKey = await crypto.subtle.importKey('pkcs8', keyDer, params, true, ['sign']);
+        break;
+      } catch(e) { lastErr = e; }
+    }
+    if (!privateKey) throw lastErr || new Error('Could not import key');
+
+    const spkiDer = extractSpkiFromCert(certDer);
+    let publicKey;
+    try {
+      publicKey = await crypto.subtle.importKey('spki', spkiDer,
+        { name: privateKey.algorithm.name }, true, ['verify']);
+    } catch(e) {
+      publicKey = null;
+    }
+    const spki = spkiDer;
+    await setActiveKey({ privateKey, publicKey }, certDer, spki, file.name);
+  } catch(e) {
+    alert('Failed to load key: ' + e.message);
+  }
+}
+
+/* ============================================================
+   V2 SIGNER
+   ============================================================ */
+async function computeChunkedDigest(data) {
+  const CHUNK = 1024 * 1024;
+  if (data.length === 0) {
+    const empty = await sha256(new Uint8Array(0));
+    const buf = concatU8(new Uint8Array([0x5a]), empty, empty);
+    return sha256(buf);
+  }
+  if (data.length <= CHUNK) {
+    const chunkHash = await sha256(data);
+    const buf = concatU8(new Uint8Array([0x5a]), chunkHash);
+    return sha256(buf);
+  }
+  const chunks = [];
+  for (let off = 0; off < data.length; off += CHUNK) {
+    chunks.push(await sha256(data.subarray(off, Math.min(off + CHUNK, data.length))));
+  }
+  const buf = concatU8(new Uint8Array([0x5a]), u32LE(chunks.length), ...chunks);
+  return sha256(buf);
+}
+
+function lpWrap(data) { return concatU8(u32LE(data.length), data); }
+
+/* ============================================================
+   V1 SIGNER (JAR signing)
+   ============================================================ */
+function formatManifestEntry(name, digestB64) {
+  return `Name: ${name}\r\nSHA-256-Digest: ${digestB64}\r\n\r\n`;
+}
+
+async function signApkV1Entries(apkBytes, privateKey, certDer, sigName) {
+  const zip = parseZip(apkBytes);
+  const digests = [];
+  for (const entry of zip.entries) {
+    if (entry.name.startsWith('META-INF/')) continue;
+    if (entry.name.endsWith('/')) continue;
+    let uncompressed;
+    try { uncompressed = await getEntryUncompressed(apkBytes, entry); }
+    catch(e) { continue; }
+    const digest = await sha256(uncompressed);
+    digests.push({ name: entry.name, digest });
+  }
+
+  let manifestBody = '';
+  for (const d of digests) {
+    manifestBody += formatManifestEntry(d.name, u8ToBase64(d.digest));
+  }
+  const manifestBytes = new TextEncoder().encode(manifestBody);
+
+  // Create .SF
+  const manifestSha = await sha256(manifestBytes);
+  let sfBody = `Signature-Version: 1.0\r\n`;
+  sfBody += `Created-By: 1.0 (Android)\r\n`;
+  sfBody += `SHA-256-Digest-Manifest: ${u8ToBase64(manifestSha)}\r\n\r\n`;
+
+  for (const d of digests) {
+    const digestB64 = u8ToBase64(d.digest);
+    const section = `Name: ${d.name}\r\nSHA-256-Digest: ${digestB64}\r\n\r\n`;
+    const sectionBytes = new TextEncoder().encode(section);
+    const sectionSha = await sha256(sectionBytes);
+    sfBody += `Name: ${d.name}\r\nSHA-256-Digest: ${u8ToBase64(sectionSha)}\r\n\r\n`;
+  }
+  const sfBytes = new TextEncoder().encode(sfBody);
+
+  // PKCS#7 signing of .SF
+  const rsaBytes = await createPkcs7(sfBytes, privateKey, certDer, sigName);
+
+  return [
+    { name: 'META-INF/MANIFEST.MF', data: manifestBytes },
+    { name: 'META-INF/CERT.SF', data: sfBytes },
+    { name: 'META-INF/CERT.RSA', data: rsaBytes },
+  ];
+}
+
+async function createPkcs7(contentBytes, privateKey, certDer, sigName) {
+  const contentHash = await sha256(contentBytes);
+
+  // Digest algorithm OID for SHA-256
+  const sha256AlgOid = '2.16.840.1.101.3.4.2.1';
+  const sha256AlgDer = derSeq([derOID(sha256AlgOid), derNull()]);
+
+  // RSA encryption OID
+  const rsaEncOid = '1.2.840.113549.1.1.1';
+
+  const { issuerDER, serialDER } = extractIssuerAndSerial(certDer);
+  const issuerAndSerial = derSeq([issuerDER, serialDER]);
+
+  // Authenticated attributes
+  const contentTypeAttr = derSeq([
+    derOID('1.2.840.113549.1.9.3'),
+    derSetOf([derOID('1.2.840.113549.1.7.1')])
+  ]);
+  const messageDigestAttr = derSeq([
+    derOID('1.2.840.113549.1.9.4'),
+    derSetOf([derOctetString(contentHash)])
+  ]);
+
+  // SET OF for signing (0x31), but encoded as [0] IMPLICIT (0xa0) inside SignerInfo
+  const attrsForSigning = derSetOf([contentTypeAttr, messageDigestAttr]);
+  const attrsForEncoding = derWrap(0xa0, concatU8(contentTypeAttr, messageDigestAttr));
+
+  const sigParams = sigName && sigName.includes('ECDSA')
+    ? { name: 'ECDSA', hash: sigName.includes('384') ? 'SHA-384' : 'SHA-256' }
+    : { name: 'RSASSA-PKCS1-v1_5' };
+  const signature = new Uint8Array(await crypto.subtle.sign(sigParams, privateKey, attrsForSigning));
+
+  const signerInfo = derSeq([
+    derIntFromNumber(1),
+    issuerAndSerial,
+    sha256AlgDer,
+    attrsForEncoding,
+    derSeq([derOID(rsaEncOid), derNull()]),
+    derOctetString(signature),
+  ]);
+
+  const digestAlgorithms = derSetOf([sha256AlgDer]);
+  const encapContentInfo = derSeq([
+    derOID('1.2.840.113549.1.7.1'),
+    derWrap(0xa0, derOctetString(contentBytes))
+  ]);
+  const certificates = derWrap(0xa0, certDer);
+  const signerInfos = derSetOf([signerInfo]);
+
+  const signedData = derSeq([
+    derIntFromNumber(1),
+    digestAlgorithms,
+    encapContentInfo,
+    certificates,
+    signerInfos,
+  ]);
+
+  // ContentInfo wrapper
+  return derSeq([
+    derOID('1.2.840.113549.1.7.2'),
+    derWrap(0xa0, signedData)
+  ]);
+}
+
+/* ============================================================
+   APK SIGNING (V1 + V2 + V3)
+   ============================================================ */
+async function signApkFull(apkBytes, privateKey, certDer, spkiDer, schemes, onProgress) {
+  let currentApk = apkBytes;
+  const sigName = currentKeyInfo ? currentKeyInfo.signatureAlg : 'SHA-256 with RSA';
+
+  // Step 1: V1 signing
+  if (schemes.v1) {
+    onProgress && onProgress('Computing V1 (JAR) digests…', 0.1);
+    const v1Entries = await signApkV1Entries(currentApk, privateKey, certDer, sigName);
+
+    // Add v1 entries to ZIP
+    const zip = parseZip(currentApk);
+    const allEntries = zip.entries.map(e => ({
+      name: e.name,
+      compressedData: currentApk.subarray(e.dataOffset, e.dataOffset + e.compSize),
+      method: e.method,
+      crc: e.crc32,
+      uncompressedSize: e.uncompSize,
+    }));
+
+    for (const ve of v1Entries) {
+      allEntries.push({
+        name: ve.name,
+        compressedData: ve.data,
+        method: 0,
+        crc: crc32(ve.data),
+        uncompressedSize: ve.data.length,
+      });
+    }
+
+    currentApk = buildZip(allEntries);
+  }
+
+  // Step 2: V2/V3 signing block
+  if (schemes.v2 || schemes.v3) {
+    onProgress && onProgress('Computing content digests…', 0.3);
+    const zip = parseZip(currentApk);
+
+    const digestRecords = [];
+    const sortedEntries = [...zip.entries].sort((a, b) => a.name.localeCompare(b.name));
+    for (let i = 0; i < sortedEntries.length; i++) {
+      const entry = sortedEntries[i];
+      if (entry.name.endsWith('/')) continue;
+      if (entry.name.startsWith('META-INF/') &&
+          (entry.name.endsWith('.SF') || entry.name.endsWith('.RSA') ||
+           entry.name.endsWith('.DSA') || entry.name.endsWith('.EC') ||
+           entry.name === 'META-INF/MANIFEST.MF')) continue;
+      let uncompressed;
+      try { uncompressed = await getEntryUncompressed(currentApk, entry); }
+      catch(e) { continue; }
+      const digest = await computeChunkedDigest(uncompressed);
+      digestRecords.push({ name: entry.name, digest });
+    }
+
+    onProgress && onProgress('Building signature block…', 0.6);
+
+    const digestItems = [];
+    for (const rec of digestRecords) {
+      const nameBytes = new TextEncoder().encode(rec.name);
+      digestItems.push(lpWrap(concatU8(lpWrap(nameBytes), lpWrap(rec.digest))));
+    }
+    const digestsSeq = concatU8(u32LE(digestItems.length), ...digestItems);
+    const digestsLP = lpWrap(digestsSeq);
+
+    const certItems = [lpWrap(certDer)];
+    const certsSeq = concatU8(u32LE(certItems.length), ...certItems);
+    const certsLP = lpWrap(certsSeq);
+
+    const attrsLP = lpWrap(u32LE(0));
+
+    // V2 signed data
+    const signedDataV2 = concatU8(digestsLP, certsLP, attrsLP);
+
+    // V3 signed data (adds minSdkVersion)
+    const signedDataV3 = concatU8(digestsLP, certsLP, attrsLP, u32LE(24));
+
+    const sigParams = sigName && sigName.includes('ECDSA')
+      ? { name: 'ECDSA', hash: sigName.includes('384') ? 'SHA-384' : 'SHA-256' }
+      : { name: 'RSASSA-PKCS1-v1_5' };
+
+    const blockPairs = [];
+
+    if (schemes.v2) {
+      const signatureV2 = new Uint8Array(await crypto.subtle.sign(sigParams, privateKey, signedDataV2));
+      const ALG_ID = 0x0103;
+      const sigRecord = concatU8(u32LE(ALG_ID), lpWrap(signatureV2));
+      const signaturesSeq = concatU8(u32LE(1), lpWrap(sigRecord));
+      const signaturesLP = lpWrap(signaturesSeq);
+      const pubKeyLP = lpWrap(spkiDer);
+      const signer = concatU8(lpWrap(signedDataV2), signaturesLP, pubKeyLP);
+      const signersContent = concatU8(u32LE(1), lpWrap(signer));
+      const v2Value = lpWrap(signersContent);
+      blockPairs.push({ id: ID_V2, value: v2Value });
+    }
+
+    if (schemes.v3) {
+      const signatureV3 = new Uint8Array(await crypto.subtle.sign(sigParams, privateKey, signedDataV3));
+      const ALG_ID = 0x0103;
+      const sigRecord = concatU8(u32LE(ALG_ID), lpWrap(signatureV3));
+      const signaturesSeq = concatU8(u32LE(1), lpWrap(sigRecord));
+      const signaturesLP = lpWrap(signaturesSeq);
+      const pubKeyLP = lpWrap(spkiDer);
+      const signer = concatU8(lpWrap(signedDataV3), signaturesLP, pubKeyLP);
+      const signersContent = concatU8(u32LE(1), lpWrap(signer));
+      const v3Value = lpWrap(signersContent);
+      blockPairs.push({ id: ID_V3, value: v3Value });
+    }
+
+    onProgress && onProgress('Rebuilding APK…', 0.85);
+
+    const pairBytesArr = [];
+    for (const bp of blockPairs) {
+      const pairLen = 4 + bp.value.length;
+      pairBytesArr.push(concatU8(u64LE(pairLen), u32LE(bp.id), bp.value));
+    }
+    const pairsTotal = pairBytesArr.reduce((a, b) => a + b.length, 0);
+    const innerSize = pairsTotal + 8 + 16;
+
+    const signingBlock = concatU8(
+      u64LE(innerSize),
+      ...pairBytesArr,
+      u64LE(innerSize),
+      new TextEncoder().encode(APK_SIG_BLOCK_MAGIC)
+    );
+
+    const localData = currentApk.subarray(0, zip.cdOffset);
+    const cdData = currentApk.subarray(zip.cdOffset, zip.eocdOff);
+    const oldEocd = currentApk.subarray(zip.eocdOff);
+
+    const newCdOffset = zip.cdOffset + signingBlock.length;
+    const newEocd = new Uint8Array(oldEocd);
+    const dv = new DataView(newEocd.buffer, newEocd.byteOffset);
+    dv.setUint32(16, newCdOffset, true);
+
+    currentApk = concatU8(localData, signingBlock, cdData, newEocd);
+  }
+
+  onProgress && onProgress('Done!', 1.0);
+  return currentApk;
+}
+
+/* ============================================================
+   MANIFEST SANITIZER (Anti-Split)
+   ============================================================ */
+function sanitizeManifest(bytes) {
+  const buffer = new Uint8Array(bytes);
+  const replacements = [
+    ['com.android.vending.splits.required', 'com.android.vending.splits.merged__'],
+    ['com.android.vending.splits', 'com.android.vending.merged'],
+    ['requiredSplitTypes', '__req_SplitTypes__'],
+    ['configForSplit', '__cfgForSplit_'],
+    ['isFeatureSplit', '__isFeatSplit_'],
+    ['isolatedSplits', '__isolated_spt'],
+    ['splitTypes', '__sptTypes'],
+    ['isSplitRequired', '__isSplitReq__'],
+    ['split', '__spt'],
+  ];
+  for (const [target, repl] of replacements) {
+    const tb = new TextEncoder().encode(target);
+    const rb = new TextEncoder().encode(repl);
+    if (tb.length !== rb.length) continue;
+    replaceBytesInBuffer(buffer, tb, rb);
+    const tb16 = toUtf16LE(tb);
+    const rb16 = toUtf16LE(rb);
+    replaceBytesInBuffer(buffer, tb16, rb16);
+  }
+  return buffer;
+}
+
+function toUtf16LE(bytes) {
+  const out = new Uint8Array(bytes.length * 2);
+  for (let i = 0; i < bytes.length; i++) {
+    out[i * 2] = bytes[i];
+    out[i * 2 + 1] = 0;
+  }
+  return out;
+}
+
+function replaceBytesInBuffer(buffer, target, replacement) {
+  if (target.length === 0) return;
+  for (let i = 0; i <= buffer.length - target.length; i++) {
+    let match = true;
+    for (let j = 0; j < target.length; j++) {
+      if (buffer[i + j] !== target[j]) { match = false; break; }
+    }
+    if (match) {
+      buffer.set(replacement, i);
+      i += target.length - 1;
+    }
+  }
+}
+
+/* ============================================================
+   APK MERGER (Anti-Split)
+   ============================================================ */
+async function mergeApkFiles(baseBytes, splitBytesList, options, onProgress) {
+  onProgress && onProgress('Parsing base APK…', 0.05);
+  const baseZip = parseZip(baseBytes);
+
+  const baseEntries = [];
+  for (const e of baseZip.entries) {
+    baseEntries.push({
+      name: e.name,
+      compressedData: baseBytes.subarray(e.dataOffset, e.dataOffset + e.compSize),
+      method: e.method,
+      crc: e.crc32,
+      uncompressedSize: e.uncompSize,
+    });
+  }
+
+  // Strip split attrs from manifest if enabled
+  if (options.stripManifest) {
+    onProgress && onProgress('Stripping split attributes from manifest…', 0.15);
+    for (const e of baseEntries) {
+      if (e.name === 'AndroidManifest.xml') {
+        try {
+          let raw;
+          if (e.method === 0) raw = new Uint8Array(e.compressedData);
+          else raw = await inflateRaw(e.compressedData);
+          const patched = sanitizeManifest(raw);
+          if (e.method === 0) {
+            e.compressedData = patched;
+          } else {
+            e.compressedData = await deflateRaw(patched);
+          }
+          e.crc = crc32(patched);
+          e.uncompressedSize = patched.length;
+        } catch(err) {
+          console.warn('Failed to patch manifest:', err);
+        }
+        break;
+      }
+    }
+  }
+
+  const existingNames = new Set(baseEntries.map(e => e.name));
+  let maxDex = 1;
+  for (const e of baseEntries) {
+    const m = e.name.match(/^classes(\d*)\.dex$/);
+    if (m) {
+      const num = m[1] === '' ? 1 : parseInt(m[1]);
+      if (num > maxDex) maxDex = num;
+    }
+  }
+
+  for (let si = 0; si < splitBytesList.length; si++) {
+    const splitBytes = splitBytesList[si];
+    onProgress && onProgress(`Merging split ${si + 1}/${splitBytesList.length}…`, 0.3 + 0.4 * (si / splitBytesList.length));
+    let splitZip;
+    try { splitZip = parseZip(splitBytes); }
+    catch(e) { console.warn('Failed to parse split', e); continue; }
+
+    for (const e of splitZip.entries) {
+      const name = e.name;
+      // Skip signature files
+      if (name.startsWith('META-INF/') &&
+          (name.toUpperCase().endsWith('.SF') || name.toUpperCase().endsWith('.RSA') ||
+           name.toUpperCase().endsWith('.DSA') || name.toUpperCase().endsWith('.EC') ||
+           name === 'META-INF/MANIFEST.MF')) {
+        continue;
+      }
+      // Skip split manifest
+      if (name === 'AndroidManifest.xml') continue;
+      // Skip split resources.arsc (best-effort — keep base only)
+      if (name === 'resources.arsc') continue;
+
+      let outName = name;
+      const dexMatch = name.match(/^classes(\d*)\.dex$/);
+      if (dexMatch) {
+        maxDex++;
+        outName = `classes${maxDex}.dex`;
+      }
+
+      if (existingNames.has(outName)) continue;
+      existingNames.add(outName);
+
+      baseEntries.push({
+        name: outName,
+        compressedData: splitBytes.subarray(e.dataOffset, e.dataOffset + e.compSize),
+        method: e.method,
+        crc: e.crc32,
+        uncompressedSize: e.uncompSize,
+      });
+    }
+  }
+
+  onProgress && onProgress('Rebuilding merged APK…', 0.8);
+  return buildZip(baseEntries);
+}
+
+/* ============================================================
+   HISTORY (localStorage)
+   ============================================================ */
+const HISTORY_KEY = 'hexas-history';
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch(_) { return []; }
+}
+
+function saveHistory(items) {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(items)); } catch(_) {}
+}
+
+function addHistoryRecord(record) {
+  const items = loadHistory();
+  items.unshift(record);
+  if (items.length > 100) items.length = 100;
+  saveHistory(items);
+  renderHistory();
+}
+
+function renderHistory() {
+  const container = document.getElementById('historyList');
+  const items = loadHistory();
+  if (!items.length) {
+    container.innerHTML = '<div class="text-center text-xs text-base-content/50 py-4">No signing history yet.</div>';
+    return;
+  }
+  container.innerHTML = items.map(item => `
+    <div class="history-item">
+      <div class="flex items-center justify-between mb-1">
+        <div class="text-xs font-semibold truncate">${escapeHtml(item.fileName)}</div>
+        <span class="badge badge-xs ${item.success ? 'badge-success' : 'badge-error'}">
+          ${item.success ? 'OK' : 'FAIL'}
+        </span>
+      </div>
+      <div class="text-[10px] text-base-content/60">
+        <div>Type: ${escapeHtml(item.type || 'sign')} · Schemes: ${escapeHtml(item.schemes || '-')}</div>
+        <div>Size: ${escapeHtml(item.size || '-')} · ${new Date(item.timestamp).toLocaleString()}</div>
+        ${item.error ? `<div class="text-error mt-1">${escapeHtml(item.error)}</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+document.getElementById('btnClearHistory').addEventListener('click', () => {
+  if (confirm('Clear all history?')) {
+    saveHistory([]);
+    renderHistory();
+  }
+});
+
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  if (n < 1024*1024*1024) return (n/1024/1024).toFixed(2) + ' MB';
+  return (n/1024/1024/1024).toFixed(2) + ' GB';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ============================================================
+   TABS
+   ============================================================ */
+let activeTab = 'analyzer';
+document.querySelectorAll('[role="tab"]').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const target = tab.dataset.tab;
+    if (target === 'themes') { openThemeModal(); return; }
+    activeTab = target;
+    document.querySelectorAll('[role="tab"]').forEach(t => t.classList.remove('tab-active'));
+    tab.classList.add('tab-active');
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    const panel = document.getElementById('tab-' + target);
+    if (panel) panel.classList.remove('hidden');
+    if (target === 'history') renderHistory();
+  });
+});
+
+/* ============================================================
+   SCHEME TOGGLE CHIPS
+   ============================================================ */
+document.querySelectorAll('.scheme-chip[data-scheme]').forEach(chip => {
+  if (chip.dataset.scheme === 'v4') return;
+  chip.addEventListener('click', () => {
+    chip.classList.toggle('on');
+    const ind = chip.querySelector('.indicator');
+    ind.innerHTML = chip.classList.contains('on') ? '<i class="fa-solid fa-check"></i>' : '';
+  });
+});
+
+function getEnabledSchemes() {
+  const schemes = { v1: false, v2: false, v3: false, v4: false };
+  document.querySelectorAll('.scheme-chip[data-scheme]').forEach(chip => {
+    const name = chip.dataset.scheme;
+    schemes[name] = chip.classList.contains('on');
+  });
+  return schemes;
+}
+
+/* ============================================================
+   FILE DROP SETUP
+   ============================================================ */
+let analyzerFileRef = null;
+let signerFileRef = null;
+let mergeBaseFileRef = null;
+let mergeSplitsFilesRef = [];
+let mergeBundleFileRef = null;
+
+function setupFileDrop(dropId, inputId, nameId, onSelect) {
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(inputId);
+  const nameLabel = document.getElementById(nameId);
+
+  drop.addEventListener('click', (e) => {
+    if (e.target === input) return;
+    input.click();
+  });
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('dragover'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (!files || !files.length) return;
+    onSelect(input.multiple ? files : files[0], nameLabel);
+  });
+  input.addEventListener('change', () => {
+    const files = input.files;
+    if (!files || !files.length) return;
+    onSelect(input.multiple ? files : files[0], nameLabel);
+  });
+}
+
+setupFileDrop('analyzerDrop', 'analyzerFile', 'analyzerFileName', (file, label) => {
+  analyzerFileRef = file;
+  label.textContent = file.name + ' (' + formatBytes(file.size) + ')';
+  document.getElementById('btnAnalyze').disabled = false;
+});
+
+setupFileDrop('signerDrop', 'signerFile', 'signerFileName', (file, label) => {
+  signerFileRef = file;
+  label.textContent = file.name + ' (' + formatBytes(file.size) + ')';
+  updateSignButton();
+});
+
+setupFileDrop('mergeBaseDrop', 'mergeBaseFile', 'mergeBaseName', (file, label) => {
+  mergeBaseFileRef = file;
+  label.textContent = file.name + ' (' + formatBytes(file.size) + ')';
+  updateMergeButton();
+});
+
+setupFileDrop('mergeSplitsDrop', 'mergeSplitsFiles', 'mergeSplitsName', (files, label) => {
+  mergeSplitsFilesRef = Array.from(files);
+  label.textContent = mergeSplitsFilesRef.length + ' file(s) selected';
+  updateMergeButton();
+});
+
+setupFileDrop('mergeBundleDrop', 'mergeBundleFile', 'mergeBundleName', (file, label) => {
+  mergeBundleFileRef = file;
+  label.textContent = file.name + ' (' + formatBytes(file.size) + ')';
+  updateMergeButton();
+});
+
+// merge auto-sign / strip manifest chips
+['mergeAutoSign', 'mergeStripManifest'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('click', () => {
+    el.classList.toggle('on');
+    el.querySelector('.indicator').innerHTML = el.classList.contains('on') ? '<i class="fa-solid fa-check"></i>' : '';
+  });
+});
+
+function updateSignButton() {
+  document.getElementById('btnSign').disabled = !(signerFileRef && currentKeyPair);
+}
+
+function updateMergeButton() {
+  const hasInput = mergeBaseFileRef || mergeBundleFileRef;
+  const hasSplits = mergeBaseFileRef && mergeSplitsFilesRef.length > 0;
+  const ok = hasSplits || mergeBundleFileRef;
+  document.getElementById('btnMerge').disabled = !ok;
+}
+
+/* ============================================================
+   ANALYZER ACTION
+   ============================================================ */
+document.getElementById('btnAnalyze').addEventListener('click', async () => {
+  if (!analyzerFileRef) return;
+  const file = analyzerFileRef;
+  const progress = document.getElementById('analyzerProgress');
+  const progressText = document.getElementById('analyzerProgressText');
+  const results = document.getElementById('analyzerResults');
+  progress.classList.remove('hidden');
+  progress.classList.add('flex');
+  results.innerHTML = '';
+
+  try {
+    progressText.textContent = 'Reading file…';
+    const buf = new Uint8Array(await file.arrayBuffer());
+
+    progressText.textContent = 'Parsing ZIP structure…';
+    const zip = parseZip(buf);
+
+    progressText.textContent = 'Locating APK Signing Block…';
+    const signingBlock = findSigningBlock(buf, zip.cdOffset);
+
+    const infoHtml = `
+      <div class="stat-card">
+        <div class="flex items-center gap-2 mb-2">
+          <i class="fa-solid fa-file-zipper text-primary"></i>
+          <span class="font-semibold text-sm">${escapeHtml(file.name)}</span>
+        </div>
+        <div class="grid grid-cols-2 gap-1 text-[11px] text-base-content/70">
+          <div>Size: <span class="text-base-content">${formatBytes(file.size)}</span></div>
+          <div>Entries: <span class="text-base-content">${zip.total}</span></div>
+          <div>CD offset: <span class="text-base-content font-mono">0x${zip.cdOffset.toString(16)}</span></div>
+          <div>CD size: <span class="text-base-content font-mono">${zip.cdSize} B</span></div>
+        </div>
+      </div>
+    `;
+
+    if (!signingBlock) {
+      results.innerHTML = infoHtml + `
+        <div class="alert alert-warning py-2 text-xs">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>No APK Signing Block found. This APK uses legacy JAR (v1) signing only, or is unsigned.</span>
+        </div>
+      `;
+      progress.classList.add('hidden');
+      progress.classList.remove('flex');
+      return;
+    }
+
+    progressText.textContent = 'Parsing signing block pairs…';
+    const pairs = parsePairs(buf, signingBlock.pairsOffset, signingBlock.pairsEnd);
+
+    let v2Data = null, v3Data = null;
+    const pairList = [];
+    for (const p of pairs) {
+      let label = 'Unknown';
+      if (p.id === ID_V2) { label = 'V2'; v2Data = parseV2V3Block(p.value); }
+      else if (p.id === ID_V3) { label = 'V3'; v3Data = parseV2V3Block(p.value); }
+      else if (p.id === ID_V31) label = 'V3.1';
+      else if (p.id === 0x42726577) label = 'Verity Padding';
+      else if (p.id === 0x6dff800d) label = 'Source Stamp';
+      pairList.push({ id: p.id, label, length: p.length });
+    }
+
+    const certsBySource = { V2: [], V3: [] };
+    for (const [source, data] of [['V2', v2Data], ['V3', v3Data]]) {
+      if (!data) continue;
+      for (const signer of data.signers) {
+        if (signer.error) continue;
+        for (const certDer of signer.signedData.certificates) {
+          const info = parseCertificate(certDer);
+          info.fingerprints = await computeFingerprints(certDer);
+          info.der = certDer;
+          info.scheme = source;
+          certsBySource[source].push(info);
+        }
+      }
+    }
+
+    progressText.textContent = 'Building hex view…';
+    const highlightRanges = [];
+    for (const p of pairs) {
+      if (p.id === ID_V2 || p.id === ID_V3) {
+        const relStart = p.offset - signingBlock.blockStart;
+        highlightRanges.push([relStart, relStart + p.length]);
+      }
+    }
+    const hexHtml = renderHexDump(signingBlock.bytes, highlightRanges, 8192);
+
+    let html = infoHtml;
+
+    html += `
+      <div class="stat-card">
+        <div class="text-[11px] font-semibold uppercase text-base-content/50 mb-2">Detected Schemes</div>
+        <div class="flex flex-wrap gap-2">
+          ${v2Data ? '<span class="badge-scheme bg-success/15 text-success"><i class="fa-solid fa-check"></i>V2</span>' : '<span class="badge-scheme bg-base-300 text-base-content/50"><i class="fa-solid fa-xmark"></i>V2</span>'}
+          ${v3Data ? '<span class="badge-scheme bg-success/15 text-success"><i class="fa-solid fa-check"></i>V3</span>' : '<span class="badge-scheme bg-base-300 text-base-content/50"><i class="fa-solid fa-xmark"></i>V3</span>'}
+          <span class="badge-scheme bg-base-300 text-base-content/70"><i class="fa-solid fa-layer-group"></i>${pairs.length} pairs</span>
+          <span class="badge-scheme bg-base-300 text-base-content/70"><i class="fa-solid fa-database"></i>${signingBlock.blockSize} B block</span>
+        </div>
+      </div>
+    `;
+
+    for (const source of ['V2', 'V3']) {
+      const certs = certsBySource[source];
+      if (!certs.length) continue;
+      html += `
+        <div class="stat-card">
+          <div class="text-[11px] font-semibold uppercase text-base-content/50 mb-2">
+            <i class="fa-solid fa-certificate mr-1"></i>Certificates (${source}) — ${certs.length}
+          </div>
+          <div class="space-y-2">
+      `;
+      for (let i = 0; i < certs.length; i++) {
+        const c = certs[i];
+        html += `
+          <div class="p-2 rounded bg-base-200 text-[11px] space-y-1">
+            <div class="flex items-center gap-1.5">
+              <span class="badge badge-xs badge-primary">#${i+1}</span>
+              <span class="font-semibold text-base-content/90 truncate">${escapeHtml(c.subject || 'Unknown Subject')}</span>
+            </div>
+            <div class="text-base-content/60"><span class="text-base-content/40">Issuer:</span> ${escapeHtml(c.issuer)}</div>
+            <div class="text-base-content/60"><span class="text-base-content/40">Alg:</span> ${escapeHtml(c.publicKeyAlg)} / ${escapeHtml(c.signatureAlg)}</div>
+            <div class="text-base-content/60"><span class="text-base-content/40">Serial:</span> <span class="font-mono text-[10px]">${escapeHtml(c.serialNumber)}</span></div>
+            <div class="text-base-content/60"><span class="text-base-content/40">Valid:</span> ${escapeHtml(c.notBefore)} → ${escapeHtml(c.notAfter)}</div>
+            <div class="text-base-content/60"><span class="text-base-content/40">SHA-256:</span>
+              <code class="block text-[10px] break-all text-primary font-mono mt-0.5">${escapeHtml(c.fingerprints.sha256)}</code>
+            </div>
+            <div class="text-base-content/60"><span class="text-base-content/40">SHA-1:</span>
+              <code class="block text-[10px] break-all font-mono mt-0.5">${escapeHtml(c.fingerprints.sha1)}</code>
+            </div>
+            <div class="text-base-content/40 text-[10px]">DER: ${c.der.length} bytes</div>
+          </div>
+        `;
+      }
+      html += '</div></div>';
+    }
+
+    html += `
+      <div class="stat-card">
+        <div class="text-[11px] font-semibold uppercase text-base-content/50 mb-2">Signing Block ID-Value Pairs</div>
+        <div class="space-y-1">
+    `;
+    for (const p of pairList) {
+      html += `
+        <div class="flex items-center justify-between text-[11px] py-0.5">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-xs badge-ghost font-mono">0x${p.id.toString(16).padStart(8,'0')}</span>
+            <span class="text-base-content/80">${escapeHtml(p.label)}</span>
+          </div>
+          <span class="text-base-content/40 font-mono">${p.length} B</span>
+        </div>
+      `;
+    }
+    html += '</div></div>';
+
+    html += `
+      <div class="stat-card">
+        <div class="text-[11px] font-semibold uppercase text-base-content/50 mb-2 flex items-center justify-between">
+          <span><i class="fa-solid fa-code mr-1"></i>Hex Dump — APK Signing Block</span>
+          <span class="text-base-content/40">${signingBlock.bytes.length} bytes</span>
+        </div>
+        <div class="text-[10px] text-base-content/50 mb-1">
+          <span class="text-pink-400">Pink</span> = V2/V3 ID-value pair
+        </div>
+        <div class="hex-dump scrollable-x">${hexHtml}</div>
+      </div>
+    `;
+
+    results.innerHTML = html;
+    progress.classList.add('hidden');
+    progress.classList.remove('flex');
+
+  } catch(e) {
+    console.error(e);
+    progress.classList.add('hidden');
+    progress.classList.remove('flex');
+    results.innerHTML = `
+      <div class="alert alert-error py-2 text-xs">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span>${escapeHtml(e.message)}</span>
+      </div>
+    `;
+  }
+});
+
+/* ============================================================
+   KEY GENERATION ACTION (Signer tab quick gen)
+   ============================================================ */
+document.getElementById('btnGenerateKey').addEventListener('click', async () => {
+  const prog = document.getElementById('genProgress');
+  prog.classList.remove('hidden');
+  prog.classList.add('flex');
+  try {
+    const { keyPair, cert, spki } = await generateSelfSignedCert();
+    await setActiveKey(keyPair, cert, spki, 'In-browser generated');
+  } catch(e) {
+    alert('Key generation failed: ' + e.message);
+  } finally {
+    prog.classList.add('hidden');
+    prog.classList.remove('flex');
+  }
+});
+
+document.getElementById('keyFile').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  await loadKeyFromFile(f);
+});
+
+/* ============================================================
+   KEYSTORE TAB ACTIONS
+   ============================================================ */
+document.getElementById('btnGenKeystore').addEventListener('click', async () => {
+  const prog = document.getElementById('ksProgress');
+  const progText = document.getElementById('ksProgressText');
+  const results = document.getElementById('ksResults');
+  prog.classList.remove('hidden');
+  prog.classList.add('flex');
+  progText.textContent = 'Generating keypair…';
+  results.innerHTML = '';
+
+  try {
+    const algo = document.getElementById('ksAlgo').value;
+    const validityYears = parseInt(document.getElementById('ksValidity').value) || 25;
+    const dn = {
+      CN: document.getElementById('ksCN').value.trim(),
+      O: document.getElementById('ksO').value.trim(),
+      OU: document.getElementById('ksOU').value.trim(),
+      L: document.getElementById('ksL').value.trim(),
+      ST: document.getElementById('ksST').value.trim(),
+      C: document.getElementById('ksC').value.trim().toUpperCase().slice(0, 2),
+    };
+
+    const { keyPair, cert, spki, sigName } = await generateSelfSignedCert({
+      algorithm: algo, validityYears, dn,
+    });
+
+    // Export PEM
+    const pkcs8 = new Uint8Array(await crypto.subtle.exportKey('pkcs8', keyPair.privateKey));
+    const keyPem = pemWrap(pkcs8, 'PRIVATE KEY');
+    const certPem = pemWrap(cert, 'CERTIFICATE');
+    const bundlePem = keyPem + '\n' + certPem;
+
+    const info = parseCertificate(cert);
+    const fps = await computeFingerprints(cert);
+
+    const blob = new Blob([bundlePem], { type: 'application/x-pem-file' });
+
+    results.innerHTML = `
+      <div class="stat-card text-xs space-y-1">
+        <div class="flex items-center gap-2 text-success mb-1">
+          <i class="fa-solid fa-circle-check"></i>
+          <span class="font-semibold">Keystore generated</span>
+        </div>
+        <div><span class="font-semibold">Subject:</span> ${escapeHtml(info.subject)}</div>
+        <div><span class="font-semibold">Alg:</span> ${escapeHtml(info.publicKeyAlg)} / ${escapeHtml(info.signatureAlg)}</div>
+        <div><span class="font-semibold">Valid:</span> ${escapeHtml(info.notBefore)} → ${escapeHtml(info.notAfter)}</div>
+        <div class="mt-1"><span class="font-semibold">SHA-256:</span>
+          <code class="block text-[10px] break-all text-primary font-mono mt-0.5">${escapeHtml(fps.sha256)}</code>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <a class="btn btn-primary btn-sm" href="${URL.createObjectURL(blob)}" download="keystore-${Date.now()}.pem">
+          <i class="fa-solid fa-download"></i> Download PEM
+        </a>
+        <button class="btn btn-success btn-sm" id="btnUseKeystore">
+          <i class="fa-solid fa-key"></i> Use for Signing
+        </button>
+      </div>
+    `;
+
+    // Store generated keypair globally
+    window._generatedKeyPair = keyPair;
+    window._generatedCert = cert;
+    window._generatedSpki = spki;
+
+    document.getElementById('btnUseKeystore').addEventListener('click', async () => {
+      await setActiveKey(window._generatedKeyPair, window._generatedCert, window._generatedSpki, 'Keystore tab');
+      // Switch to signer tab
+      document.querySelectorAll('[role="tab"]').forEach(t => t.classList.remove('tab-active'));
+      document.querySelector('[role="tab"][data-tab="signer"]').classList.add('tab-active');
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+      document.getElementById('tab-signer').classList.remove('hidden');
+    });
+
+  } catch(e) {
+    console.error(e);
+    results.innerHTML = `
+      <div class="alert alert-error py-2 text-xs">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span>${escapeHtml(e.message)}</span>
+      </div>
+    `;
+  } finally {
+    prog.classList.add('hidden');
+    prog.classList.remove('flex');
+  }
+});
+
+function pemWrap(derBytes, label) {
+  const b64 = u8ToBase64(derBytes);
+  const lines = [];
+  for (let i = 0; i < b64.length; i += 64) lines.push(b64.substr(i, 64));
+  return `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----\n`;
+}
+
+/* ============================================================
+   SIGN ACTION
+   ============================================================ */
+document.getElementById('btnSign').addEventListener('click', async () => {
+  if (!signerFileRef || !currentKeyPair) return;
+  const prog = document.getElementById('signProgress');
+  const progText = document.getElementById('signProgressText');
+  const results = document.getElementById('signerResults');
+  prog.classList.remove('hidden');
+  prog.classList.add('flex');
+  results.innerHTML = '';
+
+  const schemes = getEnabledSchemes();
+  if (!schemes.v1 && !schemes.v2 && !schemes.v3) {
+    results.innerHTML = `
+      <div class="alert alert-warning py-2 text-xs">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>Please enable at least one signing scheme (V1, V2, or V3).</span>
+      </div>
+    `;
+    prog.classList.add('hidden');
+    prog.classList.remove('flex');
+    return;
+  }
+
+  try {
+    const apkBytes = new Uint8Array(await signerFileRef.arrayBuffer());
+    const signed = await signApkFull(
+      apkBytes,
+      currentKeyPair.privateKey,
+      currentCertDer,
+      currentSpkiDer,
+      schemes,
+      (msg, pct) => { progText.textContent = `${msg} (${Math.round(pct*100)}%)`; }
+    );
+
+    const blob = new Blob([signed], { type: 'application/vnd.android.package-archive' });
+    const url = URL.createObjectURL(blob);
+    const baseName = signerFileRef.name.replace(/\.apk$/i, '');
+    const downloadName = baseName + '-signed.apk';
+
+    const schemeList = [];
+    if (schemes.v1) schemeList.push('V1');
+    if (schemes.v2) schemeList.push('V2');
+    if (schemes.v3) schemeList.push('V3');
+
+    results.innerHTML = `
+      <div class="alert alert-success py-2 text-xs">
+        <i class="fa-solid fa-circle-check"></i>
+        <span>APK signed with ${schemeList.join(' + ')} scheme(s) (${formatBytes(signed.length)})</span>
+      </div>
+      <a class="btn btn-primary btn-block btn-sm" href="${url}" download="${escapeHtml(downloadName)}">
+        <i class="fa-solid fa-download"></i> Download ${escapeHtml(downloadName)}
+      </a>
+    `;
+    prog.classList.add('hidden');
+    prog.classList.remove('flex');
+
+    addHistoryRecord({
+      fileName: downloadName,
+      type: 'sign',
+      schemes: schemeList.join('+'),
+      size: formatBytes(signed.length),
+      success: true,
+      timestamp: Date.now(),
+    });
+
+  } catch(e) {
+    console.error(e);
+    prog.classList.add('hidden');
+    prog.classList.remove('flex');
+    results.innerHTML = `
+      <div class="alert alert-error py-2 text-xs">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span>${escapeHtml(e.message)}</span>
+      </div>
+    `;
+    addHistoryRecord({
+      fileName: signerFileRef.name,
+      type: 'sign',
+      schemes: '-',
+      size: formatBytes(signerFileRef.size),
+      success: false,
+      error: e.message,
+      timestamp: Date.now(),
+    });
+  }
+});
+
+/* ============================================================
+   MERGE ACTION
+   ============================================================ */
+document.getElementById('btnMerge').addEventListener('click', async () => {
+  const prog = document.getElementById('mergeProgress');
+  const progText = document.getElementById('mergeProgressText');
+  const results = document.getElementById('mergeResults');
+  prog.classList.remove('hidden');
+  prog.classList.add('flex');
+  results.innerHTML = '';
+
+  const autoSign = document.getElementById('mergeAutoSign').classList.contains('on');
+  const stripManifest = document.getElementById('mergeStripManifest').classList.contains('on');
+
+  if (autoSign && !currentKeyPair) {
+    results.innerHTML = `
+      <div class="alert alert-warning py-2 text-xs">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>Auto-sign enabled but no key loaded. Load or generate a key in the Signer tab first.</span>
+      </div>
+    `;
+    prog.classList.add('hidden');
+    prog.classList.remove('flex');
+    return;
+  }
+
+  try {
+    let baseBytes, splitBytesList = [];
+
+    if (mergeBundleFileRef) {
+      progText.textContent = 'Extracting APKs from bundle…';
+      const bundleBuf = new Uint8Array(await mergeBundleFileRef.arrayBuffer());
+      const bundleZip = parseZip(bundleBuf);
+      let baseFound = null;
+      for (const e of bundleZip.entries) {
+        if (!e.name.toLowerCase().endsWith('.apk')) continue;
+        const data = await getEntryUncompressed(bundleBuf, e);
+        const lowerName = e.name.toLowerCase();
+        const baseName = lowerName.split('/').pop();
+        if (!baseFound && (baseName === 'base.apk' || lowerName.includes('base'))) {
+          baseFound = data;
+        } else {
+          splitBytesList.push(data);
+        }
+      }
+      if (!baseFound && splitBytesList.length > 0) {
+        // Fallback: use largest APK as base
+        baseFound = splitBytesList.pop();
+      }
+      if (!baseFound) throw new Error('No APK found in bundle');
+      baseBytes = baseFound;
+    } else {
+      baseBytes = new Uint8Array(await mergeBaseFileRef.arrayBuffer());
+      for (const f of mergeSplitsFilesRef) {
+        splitBytesList.push(new Uint8Array(await f.arrayBuffer()));
+      }
+    }
+
+    progText.textContent = 'Merging APKs…';
+    const merged = await mergeApkFiles(baseBytes, splitBytesList, {
+      stripManifest,
+    }, (msg, pct) => { progText.textContent = `${msg} (${Math.round(pct*100)}%)`; });
+
+    let final = merged;
+    const schemeList = [];
+
+    if (autoSign) {
+      progText.textContent = 'Signing merged APK…';
+      const schemes = getEnabledSchemes();
+      if (schemes.v1) schemeList.push('V1');
+      if (schemes.v2) schemeList.push('V2');
+      if (schemes.v3) schemeList.push('V3');
+      final = await signApkFull(merged, currentKeyPair.privateKey, currentCertDer, currentSpkiDer, schemes,
+        (msg, pct) => { progText.textContent = `${msg} (${Math.round(pct*100)}%)`; });
+    }
+
+    const blob = new Blob([final], { type: 'application/vnd.android.package-archive' });
+    const url = URL.createObjectURL(blob);
+    const downloadName = 'merged-signed.apk';
+
+    results.innerHTML = `
+      <div class="alert alert-success py-2 text-xs">
+        <i class="fa-solid fa-circle-check"></i>
+        <span>Merged ${splitBytesList.length + 1} APK(s) → ${formatBytes(final.length)}${autoSign ? ' (signed ' + schemeList.join('+') + ')' : ''}</span>
+      </div>
+      <a class="btn btn-primary btn-block btn-sm" href="${url}" download="${escapeHtml(downloadName)}">
+        <i class="fa-solid fa-download"></i> Download ${escapeHtml(downloadName)}
+      </a>
+    `;
+    prog.classList.add('hidden');
+    prog.classList.remove('flex');
+
+    addHistoryRecord({
+      fileName: downloadName,
+      type: 'merge',
+      schemes: autoSign ? schemeList.join('+') : 'none',
+      size: formatBytes(final.length),
+      success: true,
+      timestamp: Date.now(),
+    });
+
+  } catch(e) {
+    console.error(e);
+    prog.classList.add('hidden');
+    prog.classList.remove('flex');
+    results.innerHTML = `
+      <div class="alert alert-error py-2 text-xs">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span>${escapeHtml(e.message)}</span>
+      </div>
+    `;
+    addHistoryRecord({
+      fileName: 'merge',
+      type: 'merge',
+      schemes: '-',
+      size: '-',
+      success: false,
+      error: e.message,
+      timestamp: Date.now(),
+    });
+  }
+});
+
+/* ============================================================
+   INIT
+   ============================================================ */
+loadTheme();
+buildThemeGallery();
+renderHistory();
+
+console.log('%cHEX Anti-Split & APK Signer loaded','background:#7c3aed;color:#fff;padding:4px 8px;border-radius:4px;font-weight:bold;');
+</script>
+</body>
+</html>
